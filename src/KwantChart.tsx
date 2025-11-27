@@ -28,6 +28,24 @@ const PRESET_DEFAULT_TF: Partial<Record<RangePreset, TimeFrame>> = {
     YTD: "day1",
 };
 
+const RANGE_PRESET_BUTTON_CLASSES = {
+    active: "rounded border px-3 py-1 text-sm transition border-orange-500 text-orange-400",
+    inactive:
+        "rounded border px-3 py-1 text-sm transition border-white/30 text-white/70 hover:border-white/60",
+} as const;
+
+const APPLY_BUTTON_CLASSES = {
+    enabled:
+        "self-start rounded border px-3 py-1 text-xs font-semibold transition border-orange-500 text-orange-400 hover:bg-orange-500/20",
+    disabled:
+        "self-start rounded border px-3 py-1 text-xs font-semibold transition cursor-not-allowed border-white/20 text-white/30",
+} as const;
+
+const TIMEFRAME_LABEL_CLASSES = {
+    active: "px-2 text-center text-sm font-bold text-orange-500",
+    inactive: "px-2 text-center text-sm",
+} as const;
+
 type CustomDateParts = {
     year: number;
     month: number; // 1-based
@@ -366,6 +384,9 @@ function KwantChartContent({ asset = "BTC", title }: KwantChartContentProps) {
         customEndParts,
         committedEndParts,
     ]);
+    const applyButtonState: keyof typeof APPLY_BUTTON_CLASSES = isCustomDirty
+        ? "enabled"
+        : "disabled";
 
     useEffect(() => {
         timeframeChangingRef.current = true;
@@ -441,7 +462,7 @@ function KwantChartContent({ asset = "BTC", title }: KwantChartContentProps) {
     }, [startTime, endTime, asset]);
 
     return (
-            <div className="mb-30 flex min-h-[70vh] w-[90%] flex-grow flex-col rounded-lg border-2 border-white/20 bg-white/10 p-4 tracking-widest">
+            <div className="mb-30 flex h-[70vh] min-h-[30vh]  w-[90%] flex-grow flex-col rounded-lg border-2 border-white/20 bg-white/10 p-4 tracking-widest">
             <div className="flex items-center justify-between border-b border-white/10 px-4 py-3">
                 <div className="flex items-center gap-3">
                     <div className="rounded bg-white/10 px-3 py-1 text-xs uppercase tracking-[0.2em] text-orange-400">
@@ -452,22 +473,22 @@ function KwantChartContent({ asset = "BTC", title }: KwantChartContentProps) {
                     </h2>
                 </div>
                 <div className="flex flex-wrap items-center gap-2">
-                    {RANGE_PRESETS.map((preset) => (
-                        <button
-                            key={preset.id}
-                            className={`rounded border px-3 py-1 text-sm transition ${
-                                rangePreset === preset.id
-                                    ? "border-orange-500 text-orange-400"
-                                    : "border-white/30 text-white/70 hover:border-white/60"
-                            }`}
-                            onClick={() => {
-                                handlePresetSelect(preset.id);
-                                setShowDatePicker(true);
-                            }}
-                        >
-                            {preset.label}
-                        </button>
-                    ))}
+                    {RANGE_PRESETS.map((preset) => {
+                        const presetState: keyof typeof RANGE_PRESET_BUTTON_CLASSES =
+                            rangePreset === preset.id ? "active" : "inactive";
+                        return (
+                            <button
+                                key={preset.id}
+                                className={RANGE_PRESET_BUTTON_CLASSES[presetState]}
+                                onClick={() => {
+                                    handlePresetSelect(preset.id);
+                                    setShowDatePicker(true);
+                                }}
+                            >
+                                {preset.label}
+                            </button>
+                        );
+                    })}
                 </div>
             </div>
 
@@ -543,11 +564,7 @@ function KwantChartContent({ asset = "BTC", title }: KwantChartContentProps) {
                             setShowDatePicker(false);
                         }}
                         disabled={!isCustomDirty}
-                        className={`self-start rounded border px-3 py-1 text-xs font-semibold transition ${
-                            isCustomDirty
-                                ? "border-orange-500 text-orange-400 hover:bg-orange-500/20"
-                                : "cursor-not-allowed border-white/20 text-white/30"
-                        }`}
+                        className={APPLY_BUTTON_CLASSES[applyButtonState]}
                     >
                         Apply
                     </button>
@@ -556,25 +573,25 @@ function KwantChartContent({ asset = "BTC", title }: KwantChartContentProps) {
 
             <div className="flex flex-1 flex-col p-4">
                 <div className="z-5 grid w-full grid-cols-13 bg-black/70 text-center tracking-normal">
-                    {Object.entries(TIMEFRAME_CAMELCASE).map(([short, tf]) => (
-                        <div
-                            className="cursor-pointer border-b-2 border-black py-2 text-white/70 hover:bg-black"
-                            key={short}
-                            onClick={() => {
-                                setTimeframe(tf);
-                            }}
-                        >
-                            <span
-                                className={`px-2 text-center text-sm ${
-                                    timeframe === tf
-                                        ? "font-bold text-orange-500"
-                                        : ""
-                                }`}
+                    {Object.entries(TIMEFRAME_CAMELCASE).map(([short, tf]) => {
+                        const labelState: keyof typeof TIMEFRAME_LABEL_CLASSES =
+                            timeframe === tf ? "active" : "inactive";
+                        return (
+                            <div
+                                className="cursor-pointer border-b-2 border-black py-2 text-white/70 hover:bg-black"
+                                key={short}
+                                onClick={() => {
+                                    setTimeframe(tf);
+                                }}
                             >
-                                {short}
-                            </span>
-                        </div>
-                    ))}
+                                <span
+                                    className={TIMEFRAME_LABEL_CLASSES[labelState]}
+                                >
+                                    {short}
+                                </span>
+                            </div>
+                        );
+                    })}
                 </div>
 
                 <div className="flex-1 rounded-b-lg border-2 border-black/30 bg-[#111212] z-1">

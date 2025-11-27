@@ -9,9 +9,10 @@ import {
 } from "../utils";
 
 const formatPrice = (n: number) => {
-    if (n > 1 && n < 2) return n.toFixed(4);
-    if (n < 1) return n.toFixed(6);
-    if (n > 10000) return Number(n.toFixed(0)).toLocaleString("en-US");
+    const abs = Math.abs(n);
+    if (abs > 1 && abs < 2) return n.toFixed(4);
+    if (abs < 1) return n.toFixed(6);
+    if (abs > 10000) return Number(n.toFixed(0)).toLocaleString("en-US");
     return Number(n.toFixed(2)).toLocaleString("en-US");
 };
 

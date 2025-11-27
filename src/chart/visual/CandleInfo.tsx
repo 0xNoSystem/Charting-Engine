@@ -5,6 +5,12 @@ interface CandleInfoProps {
     candle: CandleData;
 }
 
+const DIFF_CLASS = {
+    flat: "text-white/70",
+    up: "text-green-400",
+    down: "text-red-400",
+} as const;
+
 const formatPrice = (n: number) => {
     if (n > 1 && n < 2) return n.toFixed(4);
     if (n < 1) return n.toFixed(6);
@@ -29,12 +35,9 @@ export function formatVolume(n: number): string {
 const CandleInfo: React.FC<CandleInfoProps> = ({ candle }) => {
     const diff = candle.close - candle.open;
     const pct = candle.open !== 0 ? (diff / candle.open) * 100 : 0;
-    const diffClass =
-        diff === 0
-            ? "text-white/70"
-            : diff > 0
-              ? "text-green-400"
-              : "text-red-400";
+    const diffState: keyof typeof DIFF_CLASS =
+        diff === 0 ? "flat" : diff > 0 ? "up" : "down";
+    const diffClass = DIFF_CLASS[diffState];
 
     return (
         <div className="pointer-events-none absolute top-3 right-4 rounded border border-white/20 bg-black/80 px-3 py-2 text-xs text-white/80 shadow-lg shadow-black/40">
