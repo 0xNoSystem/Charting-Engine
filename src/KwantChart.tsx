@@ -262,6 +262,7 @@ type KwantChartContentProps = {
     backgroundColor?: string;
     gridColor?: string;
     secondaryColor?: string;
+    crosshairColor?: string;
 };
 
 const normalizeSize = (value?: number | string, fallback = "100%") => {
@@ -277,6 +278,7 @@ function KwantChartContent({
     backgroundColor,
     gridColor,
     secondaryColor,
+    crosshairColor,
 }: KwantChartContentProps) {
     const { startTime, endTime, setTimeRange } = useChartContext();
 
@@ -452,6 +454,9 @@ function KwantChartContent({
                   ["--kwant-secondary-soft" as string]: `color-mix(in srgb, ${secondaryColor} 20%, transparent)`,
               }
             : {}),
+        ...(crosshairColor
+            ? { ["--kwant-crosshair-color" as string]: crosshairColor }
+            : {}),
     };
 
     return (
@@ -622,6 +627,7 @@ type KwantChartProps = {
     backgroundColor?: string;
     gridColor?: string;
     secondaryColor?: string;
+    crosshairColor?: string;
 };
 
 export default function KwantChart({
@@ -632,6 +638,7 @@ export default function KwantChart({
     backgroundColor,
     gridColor,
     secondaryColor,
+    crosshairColor,
 }: KwantChartProps) {
     return (
         <ChartProvider>
@@ -643,6 +650,7 @@ export default function KwantChart({
                 backgroundColor={backgroundColor}
                 gridColor={gridColor}
                 secondaryColor={secondaryColor}
+                crosshairColor={crosshairColor}
             />
         </ChartProvider>
     );

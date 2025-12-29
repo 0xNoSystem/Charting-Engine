@@ -6,6 +6,7 @@
   --kwant-secondary: #f97316;
   --kwant-secondary-text: #fb923c;
   --kwant-secondary-soft: rgba(249, 115, 22, 0.2);
+  --kwant-crosshair-color: #ffffff;
 }
 
 .kwant-chart *,

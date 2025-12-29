@@ -18,7 +18,7 @@ const CrossHair = () => {
                 y1={0}
                 x2={crispX}
                 y2={height}
-                stroke="white"
+                stroke="var(--kwant-crosshair-color, #fff)"
                 strokeWidth={1}
                 opacity={0.5}
                 strokeDasharray="6 4"
@@ -30,7 +30,7 @@ const CrossHair = () => {
                 y1={crispY}
                 x2={width}
                 y2={crispY}
-                stroke="white"
+                stroke="var(--kwant-crosshair-color, #fff)"
                 strokeWidth={1}
                 opacity={0.5}
                 strokeDasharray="6 4"
@@ -42,7 +42,7 @@ const CrossHair = () => {
                 cy={clampedY}
                 r={4}
                 fill="rgba(0,0,0,0.6)"
-                stroke="white"
+                stroke="var(--kwant-crosshair-color, #fff)"
                 strokeWidth={1}
                 opacity={0.8}
             />
