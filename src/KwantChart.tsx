@@ -416,7 +416,7 @@ function KwantChartContent({ asset = "BTC", title }: KwantChartContentProps) {
     }, [startTime, endTime, timeframe, asset]);
 
     return (
-        <div className="mb-30 flex h-[70vh] min-h-[30vh] w-[90%] flex-grow flex-col rounded-lg border-2 border-white/20 bg-white/10 p-4 tracking-widest">
+        <div className="kwant-chart mb-30 flex h-[70vh] min-h-[30vh] w-[90%] flex-grow flex-col rounded-lg border-2 border-white/20 bg-white/10 p-4 tracking-widest">
             <div className="flex items-center justify-between border-b border-white/10 px-4 py-3">
                 <div className="flex items-center gap-3">
                     <div className="rounded bg-white/10 px-3 py-1 text-xs uppercase tracking-[0.2em] text-orange-400">

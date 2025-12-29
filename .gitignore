@@ -5,3 +5,4 @@ bun.lockb
 npm-debug.log*
 yarn-error.log*
 .DS_Store
+fanpm.txt
