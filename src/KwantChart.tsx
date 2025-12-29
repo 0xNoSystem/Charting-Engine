@@ -29,20 +29,20 @@ const PRESET_DEFAULT_TF: Partial<Record<RangePreset, TimeFrame>> = {
 };
 
 const RANGE_PRESET_BUTTON_CLASSES = {
-    active: "rounded border px-3 py-1 text-sm transition border-orange-500 text-orange-400",
+    active: "kwant-secondary-border kwant-secondary-text kwant-secondary-hover rounded border px-3 py-1 text-sm transition",
     inactive:
         "rounded border px-3 py-1 text-sm transition border-white/30 text-white/70 hover:border-white/60",
 } as const;
 
 const APPLY_BUTTON_CLASSES = {
     enabled:
-        "self-start rounded border px-3 py-1 text-xs font-semibold transition border-orange-500 text-orange-400 hover:bg-orange-500/20",
+        "kwant-secondary-border kwant-secondary-text kwant-secondary-hover self-start rounded border px-3 py-1 text-xs font-semibold transition",
     disabled:
         "self-start rounded border px-3 py-1 text-xs font-semibold transition cursor-not-allowed border-white/20 text-white/30",
 } as const;
 
 const TIMEFRAME_LABEL_CLASSES = {
-    active: "px-2 text-center text-sm font-bold text-orange-500",
+    active: "kwant-secondary-text px-2 text-center text-sm font-bold",
     inactive: "px-2 text-center text-sm",
 } as const;
 
@@ -261,6 +261,7 @@ type KwantChartContentProps = {
     height?: number | string;
     backgroundColor?: string;
     gridColor?: string;
+    secondaryColor?: string;
 };
 
 const normalizeSize = (value?: number | string, fallback = "100%") => {
@@ -275,6 +276,7 @@ function KwantChartContent({
     height,
     backgroundColor,
     gridColor,
+    secondaryColor,
 }: KwantChartContentProps) {
     const { startTime, endTime, setTimeRange } = useChartContext();
 
@@ -436,19 +438,34 @@ function KwantChartContent({
         height: normalizeSize(height),
         minHeight: height === undefined ? "70vh" : undefined,
         ...(backgroundColor
-            ? { ["--kwant-chart-bg" as string]: backgroundColor }
+            ? {
+                  ["--kwant-chart-container-bg" as string]: backgroundColor,
+              }
             : {}),
         ...(gridColor
             ? { ["--kwant-grid-color" as string]: gridColor }
+            : {}),
+        ...(secondaryColor
+            ? {
+                  ["--kwant-secondary" as string]: secondaryColor,
+                  ["--kwant-secondary-text" as string]: secondaryColor,
+                  ["--kwant-secondary-soft" as string]: `color-mix(in srgb, ${secondaryColor} 20%, transparent)`,
+              }
             : {}),
     };
 
     return (
         <div className="kwant-chart" style={containerStyle}>
-            <div className="mb-30 flex h-full w-full flex-grow flex-col rounded-lg border-2 border-white/20 bg-white/10 p-4 tracking-widest">
+            <div
+                className="mb-30 flex h-full w-full flex-grow flex-col rounded-lg border-2 border-white/20 p-4 tracking-widest"
+                style={{
+                    backgroundColor:
+                        "var(--kwant-chart-container-bg, rgba(255,255,255,0.1))",
+                }}
+            >
             <div className="flex items-center justify-between border-b border-white/10 px-4 py-3">
                 <div className="flex items-center gap-3">
-                    <div className="rounded bg-white/10 px-3 py-1 text-xs uppercase tracking-[0.2em] text-orange-400">
+                    <div className="kwant-secondary-text rounded bg-white/10 px-3 py-1 text-xs uppercase tracking-[0.2em]">
                         {title || "Kwant Chart"}
                     </div>
                     <h2 className="text-xl font-semibold tracking-wide">
@@ -577,12 +594,7 @@ function KwantChartContent({
                     })}
                 </div>
 
-                <div
-                    className="flex-1 rounded-b-lg border-2 border-black/30 bg-[#111212] z-1"
-                    style={{
-                        backgroundColor: "var(--kwant-chart-bg, #111212)",
-                    }}
-                >
+                <div className="flex-1 rounded-b-lg border-2 border-black/30 bg-[#111212] z-1">
                     <ChartContainer
                         asset={asset}
                         tf={timeframe}
@@ -603,6 +615,7 @@ type KwantChartProps = {
     height?: number | string;
     backgroundColor?: string;
     gridColor?: string;
+    secondaryColor?: string;
 };
 
 export default function KwantChart({
@@ -612,6 +625,7 @@ export default function KwantChart({
     height,
     backgroundColor,
     gridColor,
+    secondaryColor,
 }: KwantChartProps) {
     return (
         <ChartProvider>
@@ -622,6 +636,7 @@ export default function KwantChart({
                 height={height}
                 backgroundColor={backgroundColor}
                 gridColor={gridColor}
+                secondaryColor={secondaryColor}
             />
         </ChartProvider>
     );
