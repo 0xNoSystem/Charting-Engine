@@ -1,4 +1,5 @@
-import type { CandleData, TimeFrame } from "../types";
+import type { TimeFrame } from "../types";
+import type { CandleData } from "./utils";
 
 export const candleCache = new Map<TimeFrame, Map<number, CandleData>>();
 

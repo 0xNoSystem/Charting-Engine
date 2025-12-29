@@ -1,5 +1,5 @@
-import React, { useRef, useEffect } from "react";
-import { useChartContext } from "../ChartContext";
+import React, { useRef, useEffect, useMemo } from "react";
+import { useChartContext } from "../ChartContextStore";
 import {
     zoomPriceRange,
     priceToY,
@@ -8,20 +8,47 @@ import {
     computePricePan,
 } from "../utils";
 
-const formatPrice = (n: number) => {
-    const abs = Math.abs(n);
-    if (abs > 1 && abs < 2) return n.toFixed(4);
-    if (abs < 1) return n.toFixed(6);
-    if (abs > 10000) return Number(n.toFixed(0)).toLocaleString("en-US");
-    return Number(n.toFixed(2)).toLocaleString("en-US");
+const MAX_DECIMALS = 10;
+
+const clampDecimals = (value: number) =>
+    Math.min(MAX_DECIMALS, Math.max(0, Math.round(value)));
+
+const formatFixedPrice = (value: number, decimals: number) => {
+    if (!Number.isFinite(value)) return "—";
+    const safeDecimals = clampDecimals(decimals);
+    return value.toLocaleString("en-US", {
+        minimumFractionDigits: safeDecimals,
+        maximumFractionDigits: safeDecimals,
+    });
 };
 
+const inferAssetDecimals = (price: number) => {
+    const abs = Math.abs(price);
+    if (!Number.isFinite(abs) || abs === 0) return 2;
+    if (abs >= 1) return 2;
+    const magnitude = Math.max(abs, 1e-12);
+    const leadingZeros = Math.max(0, -Math.floor(Math.log10(magnitude)));
+    return Math.max(6, leadingZeros + 2);
+};
+
+const niceStep = (rawStep: number) => {
+    if (!Number.isFinite(rawStep) || rawStep <= 0) return 0;
+    const exponent = Math.floor(Math.log10(rawStep));
+    const base = 10 ** exponent;
+    const fraction = rawStep / base;
+    if (fraction <= 1) return 1 * base;
+    if (fraction <= 2) return 2 * base;
+    if (fraction <= 2.5) return 2.5 * base;
+    if (fraction <= 5) return 5 * base;
+    return 10 * base;
+};
 
 const PriceScale: React.FC = () => {
     const {
         height,
         minPrice,
         maxPrice,
+        candles,
         setPriceRange,
         setManualPriceRange,
         width,
@@ -32,6 +59,9 @@ const PriceScale: React.FC = () => {
 
     const svgRef = useRef<SVGSVGElement>(null);
     const dragModeRef = useRef<"zoom" | "pan">("zoom");
+    const assetDecimalsRef = useRef<{ asset: string; decimals: number } | null>(
+        null
+    );
     const touchState = useRef<{
         mode: "zoom" | "pinch";
         startY: number;
@@ -66,19 +96,84 @@ const PriceScale: React.FC = () => {
         };
     }, []);
 
-    const levels = 12;
-    const step = (maxPrice - minPrice) / (levels - 1);
+    const range = maxPrice - minPrice;
+    const fontSize = Math.max(10, Math.min(16, height * 0.06));
+    const plotPadding = Math.max(6, Math.round(fontSize / 2));
+    const targetPx = 42;
+    const referencePrice = useMemo(() => {
+        if (candles.length > 0) {
+            const last = candles[candles.length - 1];
+            if (Number.isFinite(last.close)) return last.close;
+        }
+        const mid = (minPrice + maxPrice) / 2;
+        if (Number.isFinite(mid)) return mid;
+        if (Number.isFinite(minPrice)) return minPrice;
+        if (Number.isFinite(maxPrice)) return maxPrice;
+        return 0;
+    }, [candles, minPrice, maxPrice]);
 
-    const prices = Array.from({ length: levels }, (_, i) => {
-        const price = minPrice + i * step ;
-        const y = priceToY(price, minPrice, maxPrice, height);
-        return { price, y };
-    });
+    const assetKey = candles[0]?.asset ?? "unknown";
+    const candidateDecimals = clampDecimals(inferAssetDecimals(referencePrice));
+    let assetDecimals = candidateDecimals;
+    const stored = assetDecimalsRef.current;
+    if (stored && stored.asset === assetKey) {
+        assetDecimals = stored.decimals;
+    } else if (candles.length > 0 && assetKey !== "unknown") {
+        assetDecimalsRef.current = {
+            asset: assetKey,
+            decimals: candidateDecimals,
+        };
+        assetDecimals = candidateDecimals;
+    }
+
+    const rawStep =
+        height > 0 ? range / Math.max(2, Math.floor(height / targetPx)) : 0;
+    const minStep = assetDecimals > 0 ? 10 ** -assetDecimals : 1;
+    const stepBase = rawStep > 0 ? Math.max(rawStep, minStep) : rawStep;
+    const step = niceStep(stepBase);
+
+    const formatAxisPrice = (value: number) => {
+        if (!Number.isFinite(value)) return "—";
+        if (step <= 0) return formatFixedPrice(value, assetDecimals);
+        const rounded = Math.round(value / step) * step;
+        const safeValue = Math.abs(rounded) < step / 2 ? 0 : rounded;
+        return formatFixedPrice(safeValue, assetDecimals);
+    };
+    const formatCrosshairPrice = (value: number) => {
+        if (!Number.isFinite(value)) return "—";
+        return formatFixedPrice(value, assetDecimals);
+    };
+
+    const prices: { price: number; y: number; major: boolean }[] = [];
+    if (step > 0 && range > 0 && height > 0) {
+        const minorStep = step / 2;
+        const pxPerUnit = height / range;
+        const minorSpacing = minorStep * pxPerUnit;
+        const showMinor = minorSpacing >= 14;
+        const loopStep = showMinor ? minorStep : step;
+        const first = Math.floor(minPrice / loopStep) * loopStep;
+        const last = Math.ceil(maxPrice / loopStep) * loopStep;
+        const epsilon = step * 1e-6;
+        for (
+            let price = first;
+            price <= last + loopStep * 0.5;
+            price += loopStep
+        ) {
+            const y = priceToY(price, minPrice, maxPrice, height);
+            if (y < plotPadding || y > height - plotPadding) continue;
+            const major =
+                Math.abs(price / step - Math.round(price / step)) <= epsilon;
+            if (!showMinor && !major) continue;
+            prices.push({ price, y, major });
+            if (prices.length > 300) break;
+        }
+    }
 
     const crosshairPrice =
         crosshairY !== null
             ? yToPrice(crosshairY, minPrice, maxPrice, height)
             : null;
+    const crosshairYValue = crosshairY ?? 0;
 
     const onTouchStart = (e: React.TouchEvent) => {
         if (e.touches.length === 1) {
@@ -178,11 +273,21 @@ const PriceScale: React.FC = () => {
         setPriceRange(min, max);
     };
 
+    const labelWidth = Math.max(80, Math.min(180, width * 0.085));
+    const labelX = labelWidth / 2;
+    const crosshairWidth = Math.max(80, Math.min(140, labelWidth - 8));
+    const crosshairX = (labelWidth - crosshairWidth) / 2;
+
     return (
         <svg
-            width={100}
+            width={labelWidth}
             height={height}
-            style={{ overflow: "visible", touchAction: "none", overscrollBehavior: "contain" }}
+            style={{
+                overflowX: "visible",
+                overflowY: "visible",
+                touchAction: "none",
+                overscrollBehavior: "contain",
+            }}
             ref={svgRef}
             onWheel={onWheel}
             onTouchStart={onTouchStart}
@@ -221,60 +326,63 @@ const PriceScale: React.FC = () => {
         >
             {/* Regular scale labels */}
             {prices.map((p, idx) => (
-                <g>
+                <g key={idx}>
                     <line
-                        x1={0} // a bit to the right of the text
+                        x1={0}
                         y1={p.y}
-                        x2={-width} // full width line
+                        x2={-width}
                         y2={p.y}
                         stroke="#444"
-                        strokeOpacity={0.4}
-                        strokeWidth={0.8}
+                        strokeOpacity={p.major ? 0.4 : 0.22}
+                        strokeWidth={p.major ? 0.8 : 0.6}
                     />
-
-                    <text
-                        key={idx}
-                        x={65}
-                        y={p.y}
-                        textAnchor="end"
-                        alignmentBaseline="middle"
-                        fill="#aaa"
-                        fontSize={14}
-                    >
-                        {formatPrice(p.price)}
-                    </text>
+                    {p.major && (
+                        <text
+                            x={labelX}
+                            y={p.y}
+                            textAnchor="middle"
+                            alignmentBaseline="middle"
+                            fill="#aaa"
+                            fontSize={fontSize - 2}
+                        >
+                            {formatAxisPrice(p.price)}
+                        </text>
+                    )}
                 </g>
             ))}
 
             {/* --- Crosshair Price Label --- */}
-            {crosshairPrice !== null && mouseOnChart && !selectingInterval && (
-                <>
-                    {/* Background box (TV style) */}
-                    <rect
-                        x={5}
-                        y={crosshairY - 9}
-                        width={60}
-                        height={18}
-                        fill="#2a2a2a"
-                        stroke="#ffffff44"
-                        strokeWidth={1}
-                        rx={4}
-                    />
+            {crosshairY !== null &&
+                crosshairPrice !== null &&
+                mouseOnChart &&
+                !selectingInterval && (
+                    <>
+                        {/* Background box (TV style) */}
+                        <rect
+                            x={crosshairX}
+                            y={crosshairYValue - 9}
+                            width={crosshairWidth}
+                            height={18}
+                            fill="#2a2a2a"
+                            stroke="#ffffff44"
+                            strokeWidth={1}
+                            rx={4}
+                        />
 
-                    {/* Price text */}
-                    <text
-                        x={65}
-                        y={crosshairY}
-                        textAnchor="end"
-                        alignmentBaseline="middle"
-                        fill="white"
-                        fontSize={12}
-                        fontWeight="bold"
-                    >
-                        {formatPrice(crosshairPrice)}
-                    </text>
-                </>
-            )}
+                        {/* Price text */}
+                        <text
+                            x={labelX}
+                            y={crosshairYValue}
+                            textAnchor="middle"
+                            alignmentBaseline="middle"
+                            fill="white"
+                            fontSize={fontSize + 1}
+                            fontWeight="bold"
+                        >
+                            {formatCrosshairPrice(crosshairPrice)}
+                        </text>
+                    </>
+                )}
         </svg>
     );
 };

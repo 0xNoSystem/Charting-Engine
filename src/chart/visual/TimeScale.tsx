@@ -1,8 +1,13 @@
 import React, { useRef, useEffect } from "react";
-import { useChartContext } from "../ChartContext";
+import { useChartContext } from "../ChartContextStore";
 import { timeToX, xToTime, formatUTC, computeTimePan } from "../utils";
 import { MAX_CANDLE_WIDTH } from "../constants";
 import { TF_TO_MS } from "../../types";
+
+type TouchPoint = {
+    clientX: number;
+    clientY: number;
+};
 
 function computeTimeDragZoom(
     initialStart: number,
@@ -12,8 +17,8 @@ function computeTimeDragZoom(
     const initialRange = initialEnd - initialStart;
     const center = (initialStart + initialEnd) / 2;
 
-    // Drag right → totalDx > 0 → zoom OUT
-    // Drag left → totalDx < 0 → zoom IN
+    // Drag right -> totalDx > 0 -> zoom OUT
+    // Drag left -> totalDx < 0 -> zoom IN
     const speed = 0.002;
     const factor = 1 + totalDx * speed;
 
@@ -46,6 +51,206 @@ function computeTimeWheelZoom(
 
 const clamp = (value: number, min: number, max: number) =>
     Math.min(Math.max(value, min), max);
+
+const TIME_STEPS_MS = [
+    60_000, // 1m
+    3 * 60_000, // 3m
+    5 * 60_000, // 5m
+    10 * 60_000, // 10m
+    15 * 60_000, // 15m
+    30 * 60_000, // 30m
+    60 * 60_000, // 1h
+    2 * 60 * 60_000, // 2h
+    4 * 60 * 60_000, // 4h
+    6 * 60 * 60_000, // 6h
+    12 * 60 * 60_000, // 12h
+    24 * 60 * 60_000, // 1d
+    2 * 24 * 60 * 60_000, // 2d
+    3 * 24 * 60 * 60_000, // 3d
+    7 * 24 * 60 * 60_000, // 1w
+    14 * 24 * 60 * 60_000, // 2w
+    30 * 24 * 60 * 60_000, // ~1M
+    90 * 24 * 60 * 60_000, // ~3M
+    180 * 24 * 60 * 60_000, // ~6M
+    365 * 24 * 60 * 60_000, // ~1Y
+];
+
+const YEAR_MS = 365 * 24 * 60 * 60_000;
+const YEAR_STEPS = [1, 2, 5, 10, 20, 50, 100];
+
+const pickTimeStep = (minStep: number) => {
+    const fromList = TIME_STEPS_MS.find((step) => step >= minStep);
+    if (fromList) return fromList;
+    const minYears = minStep / YEAR_MS;
+    const yearStep =
+        YEAR_STEPS.find((years) => years >= minYears) ??
+        Math.ceil(minYears / 100) * 100;
+    return yearStep * YEAR_MS;
+};
+
+const isSameDayUtc = (a: number, b: number) => {
+    const da = new Date(a);
+    const db = new Date(b);
+    return (
+        da.getUTCFullYear() === db.getUTCFullYear() &&
+        da.getUTCMonth() === db.getUTCMonth() &&
+        da.getUTCDate() === db.getUTCDate()
+    );
+};
+
+const isSameMonthUtc = (a: number, b: number) => {
+    const da = new Date(a);
+    const db = new Date(b);
+    return (
+        da.getUTCFullYear() === db.getUTCFullYear() &&
+        da.getUTCMonth() === db.getUTCMonth()
+    );
+};
+
+const isYearBoundaryUtc = (t: number) => {
+    const d = new Date(t);
+    return d.getUTCMonth() === 0 && d.getUTCDate() === 1;
+};
+
+const formatTimeUtc = (t: number) =>
+    new Date(t).toLocaleTimeString("en-US", {
+        hour: "2-digit",
+        minute: "2-digit",
+        hour12: false,
+        timeZone: "UTC",
+    });
+
+const formatMonthDayUtc = (t: number) =>
+    new Date(t).toLocaleDateString("en-US", {
+        month: "short",
+        day: "numeric",
+        timeZone: "UTC",
+    });
+
+const formatMonthUtc = (t: number) =>
+    new Date(t).toLocaleDateString("en-US", {
+        month: "short",
+        timeZone: "UTC",
+    });
+
+const formatYearUtc = (t: number) =>
+    new Date(t).toLocaleDateString("en-US", {
+        year: "numeric",
+        timeZone: "UTC",
+    });
+
+const formatMonthYearUtc = (t: number) =>
+    new Date(t).toLocaleDateString("en-US", {
+        month: "short",
+        year: "numeric",
+        timeZone: "UTC",
+    });
+
+const formatDateUtc = (t: number) =>
+    new Date(t).toLocaleDateString("en-US", {
+        month: "short",
+        day: "numeric",
+        year: "numeric",
+        timeZone: "UTC",
+    });
+
+const formatDateTimeUtc = (t: number) =>
+    new Date(t).toLocaleString("en-US", {
+        month: "short",
+        day: "numeric",
+        year: "numeric",
+        hour: "2-digit",
+        minute: "2-digit",
+        hour12: false,
+        timeZone: "UTC",
+    });
+
+const addMonthsUtc = (date: Date, delta: number) => {
+    const year = date.getUTCFullYear();
+    const month = date.getUTCMonth();
+    return new Date(Date.UTC(year, month + delta, 1));
+};
+
+const resolveMonthStep = (stepMs: number) => {
+    if (stepMs < 60 * 24 * 60 * 60_000) return 1;
+    if (stepMs < 120 * 24 * 60 * 60_000) return 3;
+    if (stepMs < 240 * 24 * 60 * 60_000) return 6;
+    return 12;
+};
+
+const resolveYearStep = (stepMs: number) =>
+    Math.max(1, Math.round(stepMs / YEAR_MS));
+
+const buildTicks = (
+    stepMs: number,
+    startTime: number,
+    endTime: number,
+    width: number
+) => {
+    const ticks: { t: number; x: number }[] = [];
+    if (stepMs <= 0 || endTime <= startTime || width <= 0) return ticks;
+    const endBuffer = endTime + stepMs;
+
+    if (stepMs >= YEAR_MS) {
+        const yearStep = resolveYearStep(stepMs);
+        const startDate = new Date(startTime);
+        const baseYear = startDate.getUTCFullYear();
+        const alignedYear = Math.floor(baseYear / yearStep) * yearStep;
+        let cursor = new Date(Date.UTC(alignedYear, 0, 1));
+        if (cursor.getTime() > startTime) {
+            cursor = new Date(Date.UTC(alignedYear - yearStep, 0, 1));
+        }
+        while (cursor.getTime() <= endBuffer) {
+            const t = cursor.getTime();
+            const x = timeToX(t, startTime, endTime, width);
+            if (x >= -5 && x <= width + 5) {
+                ticks.push({ t, x });
+                if (ticks.length > 400) break;
+            }
+            cursor = new Date(
+                Date.UTC(cursor.getUTCFullYear() + yearStep, 0, 1)
+            );
+        }
+        return ticks;
+    }
+
+    if (stepMs >= 30 * 24 * 60 * 60_000) {
+        const monthStep = resolveMonthStep(stepMs);
+        const startDate = new Date(startTime);
+        const baseYear = startDate.getUTCFullYear();
+        const baseMonth = startDate.getUTCMonth();
+        const alignedMonth = Math.floor(baseMonth / monthStep) * monthStep;
+        let cursor = new Date(Date.UTC(baseYear, alignedMonth, 1));
+        if (cursor.getTime() > startTime) {
+            cursor = addMonthsUtc(cursor, -monthStep);
+        }
+        while (cursor.getTime() <= endBuffer) {
+            const t = cursor.getTime();
+            const x = timeToX(t, startTime, endTime, width);
+            if (x >= -5 && x <= width + 5) {
+                ticks.push({ t, x });
+                if (ticks.length > 400) break;
+            }
+            cursor = addMonthsUtc(cursor, monthStep);
+        }
+        return ticks;
+    }
+
+    const firstTick = Math.floor(startTime / stepMs) * stepMs;
+    for (let t = firstTick; t <= endBuffer; t += stepMs) {
+        const x = timeToX(t, startTime, endTime, width);
+        if (x < -5 || x > width + 5) continue;
+        ticks.push({ t, x });
+        if (ticks.length > 400) break;
+    }
+
+    return ticks;
+};
+
+const alignToPeriodStart = (t: number, periodMs: number) => {
+    if (!Number.isFinite(periodMs) || periodMs <= 0) return t;
+    return Math.floor((t - periodMs / 2) / periodMs) * periodMs;
+};
 
 const TimeScale: React.FC = () => {
     const {
@@ -80,21 +285,83 @@ const TimeScale: React.FC = () => {
 
     const ref = useRef<SVGSVGElement>(null);
 
-    const ticks = 12;
-    const step = (endTime - startTime) / (ticks - 1);
+    const range = endTime - startTime;
+    const labelMinPx = 110;
+    const minLabelStepFromPx =
+        range > 0 && width > 0 ? (range * labelMinPx) / width : 0;
+    const minLabelStep = Math.max(minLabelStepFromPx, candleDurationMs || 1);
+    const labelStep = pickTimeStep(minLabelStep);
+    const showDateOnFirst = range >= 24 * 60 * 60_000;
 
-    const times = Array.from({ length: ticks }, (_, i) => {
-        const t = startTime + i * step;
-        const x = timeToX(t, startTime, endTime, width);
-        return { t, x };
-    });
+    const labelTicks = buildTicks(labelStep, startTime, endTime, width);
+
+    const getTickLabel = (t: number, prev: number | null, stepMs: number) => {
+        if (stepMs < 24 * 60 * 60_000) {
+            const showDate =
+                (prev === null && showDateOnFirst) ||
+                (prev !== null && !isSameDayUtc(prev, t));
+            return {
+                label: showDate ? formatMonthDayUtc(t) : formatTimeUtc(t),
+                major: showDate,
+            };
+        }
+
+        if (stepMs < 30 * 24 * 60 * 60_000) {
+            const monthChanged = prev !== null && !isSameMonthUtc(prev, t);
+            return {
+                label: monthChanged ? formatMonthUtc(t) : formatMonthDayUtc(t),
+                major: monthChanged,
+            };
+        }
+
+        if (stepMs < 365 * 24 * 60 * 60_000) {
+            const yearBoundary = isYearBoundaryUtc(t);
+            return {
+                label: yearBoundary ? formatYearUtc(t) : formatMonthUtc(t),
+                major: yearBoundary,
+            };
+        }
+
+        return { label: formatYearUtc(t), major: isYearBoundaryUtc(t) };
+    };
 
     const crosshairTime =
         crosshairX !== null
             ? xToTime(crosshairX, startTime, endTime, width)
             : null;
+    const crosshairXValue = crosshairX ?? 0;
+    const formatCrosshairTime = (t: number) => {
+        if (!timeframe) return formatUTC(t);
+        if (timeframe === "month") {
+            return formatMonthYearUtc(t);
+        }
+        if (timeframe === "week") {
+            const aligned = alignToPeriodStart(t, 7 * 24 * 60 * 60_000);
+            return formatDateUtc(aligned);
+        }
+        if (timeframe === "day1" || timeframe === "day3") {
+            const aligned = alignToPeriodStart(t, TF_TO_MS[timeframe] ?? 0);
+            return formatDateUtc(aligned);
+        }
+        const tfMs = TF_TO_MS[timeframe] ?? 0;
+        if (tfMs > 0) {
+            const aligned = alignToPeriodStart(t, tfMs);
+            return formatDateTimeUtc(aligned);
+        }
+        return formatUTC(t);
+    };
 
-    const beginTouchDrag = (touch: Touch) => {
+    const labelTicksWithInfo = labelTicks.map((tick, idx) => {
+        const prev = idx > 0 ? labelTicks[idx - 1].t : null;
+        const labelInfo = getTickLabel(tick.t, prev, labelStep);
+        return {
+            ...tick,
+            label: labelInfo.label,
+            major: labelInfo.major,
+        };
+    });
+
+    const beginTouchDrag = (touch: TouchPoint) => {
         touchState.current = {
             mode: "drag",
             startX: touch.clientX,
@@ -103,7 +370,7 @@ const TimeScale: React.FC = () => {
         };
     };
 
-    const beginTouchPinch = (t1: Touch, t2: Touch) => {
+    const beginTouchPinch = (t1: TouchPoint, t2: TouchPoint) => {
         const distance = Math.hypot(
             t2.clientX - t1.clientX,
             t2.clientY - t1.clientY
@@ -111,11 +378,7 @@ const TimeScale: React.FC = () => {
         const rect = ref.current?.getBoundingClientRect();
         const midX =
             rect && width > 0
-                ? clamp(
-                      (t1.clientX + t2.clientX) / 2 - rect.left,
-                      0,
-                      width
-                  )
+                ? clamp((t1.clientX + t2.clientX) / 2 - rect.left, 0, width)
                 : width / 2;
 
         touchState.current = {
@@ -169,8 +432,7 @@ const TimeScale: React.FC = () => {
             newRange = Math.max(minZoomRange, newRange);
 
             const anchorRatio = state.anchorRatio ?? 0.5;
-            const anchorTime =
-                state.initialStart + anchorRatio * initialRange;
+            const anchorTime = state.initialStart + anchorRatio * initialRange;
             const newStart = anchorTime - anchorRatio * newRange;
             const newEnd = newStart + newRange;
 
@@ -280,6 +542,8 @@ const TimeScale: React.FC = () => {
         };
     }, []);
 
+    const fontSize = Math.max(10, Math.min(14, height * 0.06));
+
     return (
         <div
             className="pb-2"
@@ -297,54 +561,67 @@ const TimeScale: React.FC = () => {
                 height={25}
                 style={{ overflow: "visible", overscrollBehavior: "none" }}
             >
-                {/* Tick Labels */}
-                {times.slice(0, -1).map((p, idx) => (
-                    <g key={idx}>
-                        <line
-                            x1={p.x}
-                            y1={0}
-                            x2={p.x}
-                            y2={-height - 10}
-                            stroke="#444"
-                            strokeOpacity={0.4}
-                            strokeWidth={0.8}
-                        />
-                        <text
-                            x={p.x}
-                            y={20}
-                            textAnchor="middle"
-                            fill="#aaa"
-                            fontSize={11}
-                        >
-                            {formatUTC(p.t)}
-                        </text>
-                    </g>
-                ))}
+                {/* Tick Lines + Labels */}
+                {labelTicksWithInfo.map((tick, idx) => {
+                    const isLast = idx === labelTicksWithInfo.length - 1;
+                    const hasLabel = tick.label !== undefined;
+                    const isMajor = Boolean(hasLabel && tick.major);
+                    const lineOpacity = isMajor ? 0.6 : 0.35;
+                    const lineWidth = isMajor ? 1 : 0.8;
+                    const hideLine = isLast && !hasLabel;
+                    return (
+                        <g key={`tick-${tick.t}`}>
+                            {!hideLine && (
+                                <line
+                                    x1={tick.x}
+                                    y1={0}
+                                    x2={tick.x}
+                                    y2={-height - 10}
+                                    stroke="#444"
+                                    strokeOpacity={lineOpacity}
+                                    strokeWidth={lineWidth}
+                                />
+                            )}
+                            {hasLabel && (
+                                <text
+                                    x={tick.x}
+                                    y={20}
+                                    textAnchor="middle"
+                                    fill={isMajor ? "#aaa" : "#aaa"}
+                                    fontSize={fontSize}
+                                >
+                                    {tick.label}
+                                </text>
+                            )}
+                        </g>
+                    );
+                })}
 
                 {/* Crosshair Time Label */}
-                {crosshairTime !== null &&
+                {crosshairX !== null &&
+                    crosshairTime !== null &&
                     mouseOnChart &&
                     !selectingInterval && (
                         <>
                             <rect
-                                x={crosshairX - 60}
+                                x={crosshairXValue - 70}
                                 y={0}
-                                width={120}
-                                height={18}
+                                width={160}
+                                height={24}
                                 fill="#2a2a2a"
                                 stroke="#ffffff44"
                                 strokeWidth={1}
                                 rx={4}
                             />
                             <text
-                                x={crosshairX}
-                                y={13}
+                                x={crosshairXValue + 10}
+                                y={15}
                                 textAnchor="middle"
                                 fill="white"
-                                fontSize={12}
+                                fontSize={fontSize}
                                 fontWeight="bold"
                             >
-                                {formatUTC(crosshairTime)}
+                                {formatCrosshairTime(crosshairTime)}
                             </text>
                         </>
                     )}
@@ -362,14 +639,14 @@ const TimeScale: React.FC = () => {
                                     40,
                                     width - 40
                                 );
-                                const text = formatUTC(item.x);
+                                const text = formatCrosshairTime(item.x);
 
                                 return (
                                     <g key={item.label + idx}>
                                         <rect
-                                            x={px - 60}
+                                            x={px - 70}
                                             y={0}
-                                            width={120}
+                                            width={140}
                                             height={22}
                                             fill="#151515"
                                             stroke="#ff7a18"

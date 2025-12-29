@@ -3,11 +3,13 @@ import Chart from "./Chart";
 import PriceScale from "./visual/PriceScale";
 import TimeScale from "./visual/TimeScale";
 import IntervalOverlay from "./visual/Interval";
+import ChartSettings from "./visual/ChartSettings";
 import CandleInfo from "./visual/CandleInfo";
-import { useChartContext } from "./ChartContext";
+import { useChartContext } from "./ChartContextStore";
 import { xToTime } from "./utils";
 
-import type { TimeFrame, CandleData } from "../types";
+import type { TimeFrame } from "../types";
+import type { CandleData } from "./utils";
 
 interface ChartContainerProps {
     asset: string;
@@ -23,12 +25,13 @@ const ChartContainer: React.FC<ChartContainerProps> = ({
     candleData,
 }) => {
     const {
-        height,
         setCandles,
         selectingInterval,
         startTime,
         endTime,
         candles,
+        candleColor,
+        setCandleColor,
         width,
         crosshairX,
         mouseOnChart,
@@ -36,6 +39,7 @@ const ChartContainer: React.FC<ChartContainerProps> = ({
     const rightRef = useRef<HTMLDivElement>(null);
     const [rightWidth, setRightWidth] = useState(0);
     const [hoveredCandle, setHoveredCandle] = useState<CandleData | null>(null);
+    const [setting, setSetting] = useState(false);
 
     // Load candle data into context
     useEffect(() => {
@@ -102,6 +106,20 @@ const ChartContainer: React.FC<ChartContainerProps> = ({
                             <CandleInfo candle={hoveredCandle} />
                         )}
                     </div>
+                    {setting && (
+                        <div className="absolute inset-0 z-50 flex items-center justify-center bg-black/70">
+                            <ChartSettings
+                                initialColors={candleColor}
+                                onApply={(colors) =>
+                                    setCandleColor(colors.up, colors.down)
+                                }
+                                onReset={() =>
+                                    setCandleColor("#cf7b15", "#c4c3c2")
+                                }
+                                onClose={() => setSetting(false)}
+                            />
+                        </div>
+                    )}
                 </div>
 
                 {/* RIGHT PRICE SCALE */}
@@ -120,7 +138,33 @@ const ChartContainer: React.FC<ChartContainerProps> = ({
                 </div>
 
                 {/* Right-side width preview box */}
-                <div className="bg-black/60" style={{ width: rightWidth }} />
+                <div
+                    className="flex items-center justify-center bg-black/60"
+                    style={{ width: rightWidth }}
+                >
+                    <button
+                        type="button"
+                        className="text-white/60 transition hover:text-white"
+                        onClick={() => setSetting((prev) => !prev)}
+                        aria-label="Toggle chart settings"
+                        title="Settings"
+                    >
+                        <svg
+                            xmlns="http://www.w3.org/2000/svg"
+                            width="20"
+                            height="20"
+                            viewBox="0 0 24 24"
+                            fill="none"
+                            stroke="currentColor"
+                            strokeWidth="2"
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                        >
+                            <path d="M12.22 2h-.44a2 2 0 0 0-1.94 1.5l-.14.47a2 2 0 0 1-2.63 1.3l-.41-.14a2 2 0 0 0-2.5 1.3l-.22.42a2 2 0 0 0 .44 2.34l.38.38a2 2 0 0 1 0 2.83l-.38.38a2 2 0 0 0-.44 2.34l.22.42a2 2 0 0 0 2.5 1.3l.41-.14a2 2 0 0 1 2.63 1.3l.14.47a2 2 0 0 0 1.94 1.5h.44a2 2 0 0 0 1.94-1.5l.14-.47a2 2 0 0 1 2.63-1.3l.41.14a2 2 0 0 0 2.5-1.3l.22-.42a2 2 0 0 0-.44-2.34l-.38-.38a2 2 0 0 1 0-2.83l.38-.38a2 2 0 0 0 .44-2.34l-.22-.42a2 2 0 0 0-2.5-1.3l-.41.14a2 2 0 0 1-2.63-1.3l-.14-.47A2 2 0 0 0 12.22 2z" />
+                            <circle cx="12" cy="12" r="3" />
+                        </svg>
+                    </button>
+                </div>
             </div>
         </div>
     );

@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import ChartProvider, { useChartContext } from "./chart/ChartContext";
 import ChartContainer from "./chart/ChartContainer";
 import { getTimeframeCache } from "./chart/candleCache";
@@ -185,7 +185,6 @@ async function loadCandles(
     startMs: number,
     endMs: number,
     asset: string,
-    updatePrev: (a: number, b: number) => void,
     setCached?: (c: CandleData[]) => void
 ): Promise<CandleData[]> {
     if (!asset) return [];
@@ -222,9 +221,13 @@ async function loadCandles(
         setCached(fullCache);
     }
 
+    console.log(
+        `%c[LOAD CANDLES] TF=${tf}, Expected=${expectedCandles}, Cached=${cached.length}`,
+        "color: orange; font-weight: bold;"
+    );
+
     // Serve straight from cache when we already have full coverage
     if (missing.length === 0 && cached.length > 0) {
-        updatePrev(rangeStart, rangeEnd);
         return fullCache;
     }
 
@@ -248,7 +251,6 @@ async function loadCandles(
 
     const merged = cacheToArray(tfCache, asset);
 
-    updatePrev(rangeStart, rangeEnd);
     return merged;
 }
 
@@ -260,20 +262,11 @@ type KwantChartContentProps = {
 function KwantChartContent({ asset = "BTC", title }: KwantChartContentProps) {
     const { startTime, endTime, setTimeRange } = useChartContext();
 
-    const timeframeChangingRef = useRef(false);
     const defaultStartParts = useMemo(
         () => dateToParts(new Date(Date.now() - 7 * 24 * 60 * 60 * 1000)),
         []
     );
     const defaultEndParts = useMemo(() => dateToParts(new Date()), []);
-
-    const [prevStartTime, setPrevStartTime] = useState(0);
-    const [prevEndTime, setPrevEndTime] = useState(0);
-
-    const updatePrevTimeRange = (newStart: number, newEnd: number) => {
-        setPrevStartTime(newStart);
-        setPrevEndTime(newEnd);
-    };
 
     const [timeframe, setTimeframe] = useState<TimeFrame>("hour4");
     const [candleData, setCandleData] = useState<CandleData[]>([]);
@@ -305,28 +298,36 @@ function KwantChartContent({ asset = "BTC", title }: KwantChartContentProps) {
         }
     };
 
-    const applyPresetTimeRange = (preset: RangePreset) => {
-        const now = Date.now();
-        switch (preset) {
-            case "24H":
-                setTimeRange(now - 24 * 60 * 60 * 1000, now);
-                break;
-            case "7D":
-                setTimeRange(now - 7 * 24 * 60 * 60 * 1000, now);
-                break;
-            case "30D":
-                setTimeRange(now - 30 * 24 * 60 * 60 * 1000, now);
-                break;
-            case "YTD": {
-                const current = new Date();
-                const startOfYear = Date.UTC(current.getUTCFullYear(), 0, 1);
-                setTimeRange(startOfYear, now);
-                break;
+    const applyPresetTimeRange = useCallback(
+        (preset: RangePreset) => {
+            const now = Date.now();
+            switch (preset) {
+                case "24H":
+                    setTimeRange(now - 24 * 60 * 60 * 1000, now);
+                    break;
+                case "7D":
+                    setTimeRange(now - 7 * 24 * 60 * 60 * 1000, now);
+                    break;
+                case "30D":
+                    setTimeRange(now - 30 * 24 * 60 * 60 * 1000, now);
+                    break;
+                case "YTD": {
+                    const current = new Date();
+                    const startOfYear = Date.UTC(
+                        current.getUTCFullYear(),
+                        0,
+                        1
+                    );
+                    setTimeRange(startOfYear, now);
+                    break;
+                }
+                default:
+                    // CUSTOM handled separately
+                    break;
             }
-            default:
-                break;
-        }
-    };
+        },
+        [setTimeRange]
+    );
 
     const handlePresetSelect = (preset: RangePreset) => {
         if (preset === rangePreset) return;
@@ -389,60 +390,14 @@ function KwantChartContent({ asset = "BTC", title }: KwantChartContentProps) {
         : "disabled";
 
     useEffect(() => {
-        timeframeChangingRef.current = true;
-
-        const t = setTimeout(() => {
-            timeframeChangingRef.current = false;
-        }, 400);
-
-        return () => clearTimeout(t);
-    }, [timeframe]);
-
-    useEffect(() => {
         if (rangePreset !== "CUSTOM") {
             applyPresetTimeRange(rangePreset);
         }
-
-        (async () => {
-            const data = await loadCandles(
-                timeframe,
-                startTime,
-                endTime,
-                asset,
-                updatePrevTimeRange,
-                setCandleData
-            );
-            setCandleData(data);
-        })();
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, []);
+    }, [applyPresetTimeRange, rangePreset]);
 
     useEffect(() => {
         if (!asset) return;
         if (startTime <= 0 || endTime <= startTime) return;
-
-        (async () => {
-            const data = await loadCandles(
-                timeframe,
-                startTime,
-                endTime,
-                asset,
-                updatePrevTimeRange,
-                setCandleData
-            );
-            setCandleData(data);
-        })();
-    }, [timeframe, asset]);
-
-    useEffect(() => {
-        if (!asset) return;
-        if (startTime <= 0 || endTime <= startTime) return;
-        if (timeframeChangingRef.current) return;
-        if (
-            startTime > prevStartTime &&
-            (endTime < prevEndTime || prevEndTime > Date.now())
-        )
-            return;
 
         const timer = setTimeout(() => {
             (async () => {
@@ -451,18 +406,17 @@ function KwantChartContent({ asset = "BTC", title }: KwantChartContentProps) {
                     startTime,
                     endTime,
                     asset,
-                    updatePrevTimeRange,
                     setCandleData
                 );
                 setCandleData(data);
             })();
-        }, 300);
+        }, 200);
 
         return () => clearTimeout(timer);
-    }, [startTime, endTime, asset]);
+    }, [startTime, endTime, timeframe, asset]);
 
     return (
-            <div className="mb-30 flex h-[70vh] min-h-[30vh]  w-[90%] flex-grow flex-col rounded-lg border-2 border-white/20 bg-white/10 p-4 tracking-widest">
+        <div className="mb-30 flex h-[70vh] min-h-[30vh] w-[90%] flex-grow flex-col rounded-lg border-2 border-white/20 bg-white/10 p-4 tracking-widest">
             <div className="flex items-center justify-between border-b border-white/10 px-4 py-3">
                 <div className="flex items-center gap-3">
                     <div className="rounded bg-white/10 px-3 py-1 text-xs uppercase tracking-[0.2em] text-orange-400">

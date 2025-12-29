@@ -1,5 +1,21 @@
 import type { CandleData, HyperliquidCandle } from "../types";
 
+export type { CandleData } from "../types";
+
+type BinanceKline = [
+    number,
+    string,
+    string,
+    string,
+    string,
+    string,
+    number,
+    string,
+    number,
+    string,
+    string,
+];
+
 export async function fetchCandles(
     asset: string,
     startTime: number,
@@ -13,14 +29,13 @@ export async function fetchCandles(
 
     while (fetchStart < endTime) {
         const url =
-            `https://api.binance.com/api/v3/klines?symbol=${symbol}` +
-            `&interval=${interval}&startTime=${fetchStart}&endTime=${endTime}&limit=1000`;
-
+            `https://fapi.binance.com/fapi/v1/klines?symbol=${symbol}` +
+            `&interval=${interval}&startTime=${fetchStart}&endTime=${endTime}&limit=1500`;
 
         const res = await fetch(url);
         if (!res.ok) throw new Error(`Binance error ${res.status}`);
 
-        const data: any[] = await res.json();
+        const data = (await res.json()) as BinanceKline[];
         if (data.length === 0) break;
 
         // Map into CandleData
