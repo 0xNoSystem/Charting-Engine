@@ -462,7 +462,7 @@ function KwantChartContent({
     return (
         <div className="kwant-chart" style={containerStyle}>
             <div
-                className="mb-30 flex h-full w-full flex-grow flex-col rounded-lg border-2 border-white/20 p-4 tracking-widest"
+                className="mb-30 flex h-full w-full flex-grow flex-col rounded-lg p-4 tracking-widest"
                 style={{
                     backgroundColor:
                         "var(--kwant-chart-container-bg, rgba(255,255,255,0.1))",
