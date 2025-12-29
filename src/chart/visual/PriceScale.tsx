@@ -332,7 +332,7 @@ const PriceScale: React.FC = () => {
                         y1={p.y}
                         x2={-width}
                         y2={p.y}
-                        stroke="#444"
+                        stroke="var(--kwant-grid-color, #444)"
                         strokeOpacity={p.major ? 0.4 : 0.22}
                         strokeWidth={p.major ? 0.8 : 0.6}
                     />

@@ -259,6 +259,8 @@ type KwantChartContentProps = {
     title?: string;
     width?: number | string;
     height?: number | string;
+    backgroundColor?: string;
+    gridColor?: string;
 };
 
 const normalizeSize = (value?: number | string, fallback = "100%") => {
@@ -271,6 +273,8 @@ function KwantChartContent({
     title,
     width,
     height,
+    backgroundColor,
+    gridColor,
 }: KwantChartContentProps) {
     const { startTime, endTime, setTimeRange } = useChartContext();
 
@@ -431,6 +435,12 @@ function KwantChartContent({
         width: normalizeSize(width),
         height: normalizeSize(height),
         minHeight: height === undefined ? "70vh" : undefined,
+        ...(backgroundColor
+            ? { ["--kwant-chart-bg" as string]: backgroundColor }
+            : {}),
+        ...(gridColor
+            ? { ["--kwant-grid-color" as string]: gridColor }
+            : {}),
     };
 
     return (
@@ -567,7 +577,12 @@ function KwantChartContent({
                     })}
                 </div>
 
-                <div className="flex-1 rounded-b-lg border-2 border-black/30 bg-[#111212] z-1">
+                <div
+                    className="flex-1 rounded-b-lg border-2 border-black/30 bg-[#111212] z-1"
+                    style={{
+                        backgroundColor: "var(--kwant-chart-bg, #111212)",
+                    }}
+                >
                     <ChartContainer
                         asset={asset}
                         tf={timeframe}
@@ -586,6 +601,8 @@ type KwantChartProps = {
     title?: string;
     width?: number | string;
     height?: number | string;
+    backgroundColor?: string;
+    gridColor?: string;
 };
 
 export default function KwantChart({
@@ -593,6 +610,8 @@ export default function KwantChart({
     title,
     width,
     height,
+    backgroundColor,
+    gridColor,
 }: KwantChartProps) {
     return (
         <ChartProvider>
@@ -601,6 +620,8 @@ export default function KwantChart({
                 title={title}
                 width={width}
                 height={height}
+                backgroundColor={backgroundColor}
+                gridColor={gridColor}
             />
         </ChartProvider>
     );
