@@ -2,7 +2,7 @@
   line-height: 1.5;
   font-family: ui-sans-serif, system-ui, sans-serif, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol", "Noto Color Emoji";
   --kwant-chart-container-bg: rgba(255, 255, 255, 0.1);
-  --kwant-grid-color: #444;
+  --kwant-grid-color: #111212;
   --kwant-secondary: #f97316;
   --kwant-secondary-text: #fb923c;
   --kwant-secondary-soft: rgba(249, 115, 22, 0.2);
@@ -83,6 +83,10 @@
 
 .kwant-chart .kwant-secondary-hover:hover {
   background-color: var(--kwant-secondary-soft, rgba(249, 115, 22, 0.2))
+}
+
+.kwant-chart .kwant-chart-canvas {
+  background-color: var(--kwant-grid-color, #111212)
 }
 
 .kwant-chart .pointer-events-none {

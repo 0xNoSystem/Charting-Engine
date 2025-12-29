@@ -594,7 +594,13 @@ function KwantChartContent({
                     })}
                 </div>
 
-                <div className="flex-1 rounded-b-lg border-2 border-black/30 bg-[#111212] z-1">
+                <div
+                    className="flex-1 rounded-b-lg border-2 border-black/30 z-1"
+                    style={{
+                        backgroundColor:
+                            "var(--kwant-grid-color, #111212)",
+                    }}
+                >
                     <ChartContainer
                         asset={asset}
                         tf={timeframe}

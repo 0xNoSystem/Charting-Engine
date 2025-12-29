@@ -577,7 +577,7 @@ const TimeScale: React.FC = () => {
                                     y1={0}
                                     x2={tick.x}
                                     y2={-height - 10}
-                                    stroke="var(--kwant-grid-color, #444)"
+                                    stroke="#444"
                                     strokeOpacity={lineOpacity}
                                     strokeWidth={lineWidth}
                                 />

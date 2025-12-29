@@ -938,7 +938,7 @@ const Chart: React.FC<ChartProps> = ({ asset, tf, settingInterval }) => {
                 minPrice={minPrice}
                 maxPrice={maxPrice}
                 candleWidth={renderCandleWidth}
-                className="absolute inset-0 h-full w-full"
+                className="kwant-chart-canvas absolute inset-0 h-full w-full"
                 onMouseMove={handleMove}
                 onMouseEnter={handleEnter}
                 onMouseLeave={handleLeave}
