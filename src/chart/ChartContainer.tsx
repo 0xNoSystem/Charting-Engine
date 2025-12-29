@@ -125,14 +125,14 @@ const ChartContainer: React.FC<ChartContainerProps> = ({
                 {/* RIGHT PRICE SCALE */}
                 <div
                     ref={rightRef}
-                    className="w-fit cursor-n-resize bg-black/20 text-white"
+                    className="relative z-10 w-fit cursor-n-resize bg-black/20 text-white"
                 >
                     <PriceScale />
                 </div>
             </div>
 
             {/* BOTTOM TIME SCALE */}
-            <div className="flex bg-black/20 text-white">
+            <div className="relative z-10 flex bg-black/20 text-white">
                 <div className="flex-1 cursor-w-resize">
                     <TimeScale />
                 </div>
