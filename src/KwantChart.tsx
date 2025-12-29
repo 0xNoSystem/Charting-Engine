@@ -257,9 +257,21 @@ async function loadCandles(
 type KwantChartContentProps = {
     asset?: string;
     title?: string;
+    width?: number | string;
+    height?: number | string;
 };
 
-function KwantChartContent({ asset = "BTC", title }: KwantChartContentProps) {
+const normalizeSize = (value?: number | string, fallback = "100%") => {
+    if (value === undefined) return fallback;
+    return typeof value === "number" ? `${value}px` : value;
+};
+
+function KwantChartContent({
+    asset = "BTC",
+    title,
+    width,
+    height,
+}: KwantChartContentProps) {
     const { startTime, endTime, setTimeRange } = useChartContext();
 
     const defaultStartParts = useMemo(
@@ -415,8 +427,17 @@ function KwantChartContent({ asset = "BTC", title }: KwantChartContentProps) {
         return () => clearTimeout(timer);
     }, [startTime, endTime, timeframe, asset]);
 
+    const containerStyle = {
+        width: normalizeSize(width),
+        height: normalizeSize(height),
+        minHeight: height === undefined ? "70vh" : undefined,
+    };
+
     return (
-        <div className="kwant-chart mb-30 flex h-[70vh] min-h-[30vh] w-[90%] flex-grow flex-col rounded-lg border-2 border-white/20 bg-white/10 p-4 tracking-widest">
+        <div
+            className="kwant-chart mb-30 flex h-full w-full flex-grow flex-col rounded-lg border-2 border-white/20 bg-white/10 p-4 tracking-widest"
+            style={containerStyle}
+        >
             <div className="flex items-center justify-between border-b border-white/10 px-4 py-3">
                 <div className="flex items-center gap-3">
                     <div className="rounded bg-white/10 px-3 py-1 text-xs uppercase tracking-[0.2em] text-orange-400">
@@ -564,12 +585,24 @@ function KwantChartContent({ asset = "BTC", title }: KwantChartContentProps) {
 type KwantChartProps = {
     asset?: string;
     title?: string;
+    width?: number | string;
+    height?: number | string;
 };
 
-export default function KwantChart({ asset, title }: KwantChartProps) {
+export default function KwantChart({
+    asset,
+    title,
+    width,
+    height,
+}: KwantChartProps) {
     return (
         <ChartProvider>
-            <KwantChartContent asset={asset} title={title} />
+            <KwantChartContent
+                asset={asset}
+                title={title}
+                width={width}
+                height={height}
+            />
         </ChartProvider>
     );
 }
