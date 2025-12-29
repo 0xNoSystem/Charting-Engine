@@ -434,10 +434,8 @@ function KwantChartContent({
     };
 
     return (
-        <div
-            className="kwant-chart mb-30 flex h-full w-full flex-grow flex-col rounded-lg border-2 border-white/20 bg-white/10 p-4 tracking-widest"
-            style={containerStyle}
-        >
+        <div className="kwant-chart" style={containerStyle}>
+            <div className="mb-30 flex h-full w-full flex-grow flex-col rounded-lg border-2 border-white/20 bg-white/10 p-4 tracking-widest">
             <div className="flex items-center justify-between border-b border-white/10 px-4 py-3">
                 <div className="flex items-center gap-3">
                     <div className="rounded bg-white/10 px-3 py-1 text-xs uppercase tracking-[0.2em] text-orange-400">
@@ -577,6 +575,7 @@ function KwantChartContent({
                         candleData={candleData}
                     />
                 </div>
+            </div>
             </div>
         </div>
     );
