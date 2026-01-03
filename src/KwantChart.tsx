@@ -673,7 +673,7 @@ function KwantChartContent({
                                 aria-label="Exchange"
                                 value={selectedExchange}
                                 onChange={handleExchangeChange}
-                                className="rounded border border-white/30 bg-black/70 px-2 py-1 text-xs uppercase tracking-[0.2em] text-white"
+                                className="rounded border border-black/30 bg-black/70 p-1 text-xs uppercase tracking-[0.2em] text-white"
                             >
                                 {EXCHANGE_OPTIONS.map((option) => (
                                     <option key={option.value} value={option.value}>
@@ -685,7 +685,7 @@ function KwantChartContent({
                                 aria-label="Market"
                                 value={selectedMarket}
                                 onChange={handleMarketChange}
-                                className="rounded border border-white/30 bg-black/70 px-2 py-1 text-xs uppercase tracking-[0.2em] text-white"
+                                className="rounded border border-black/30 bg-black/70 p-1 text-xs uppercase tracking-[0.2em] text-white"
                             >
                                 {MARKET_OPTIONS.map((option) => (
                                     <option
