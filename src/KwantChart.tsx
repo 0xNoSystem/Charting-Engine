@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import ChartProvider, { useChartContext } from "./chart/ChartContext";
 import ChartContainer from "./chart/ChartContainer";
 import { getTimeframeCache } from "./chart/candleCache";
-import { fetchCandles } from "./chart/dataSources";
+import { fetchCandles, isTimeframeSupported } from "./chart/dataSources";
 import type { CandleData } from "./types";
 import {
     DEFAULT_DATA_SOURCE,
@@ -76,8 +76,11 @@ const APPLY_BUTTON_CLASSES = {
 
 const TIMEFRAME_LABEL_CLASSES = {
     active: "kwant-secondary-text px-2 text-center text-sm font-bold",
-    inactive: "px-2 text-center text-sm",
+    inactive: "px-2 text-center text-sm text-white/70",
+    disabled: "px-2 text-center text-sm text-white/30",
 } as const;
+
+const TIMEFRAME_ORDER = Object.values(TIMEFRAME_CAMELCASE) as TimeFrame[];
 
 type CustomDateParts = {
     year: number;
@@ -465,6 +468,33 @@ function KwantChartContent({
         [selectedExchange, selectedMarket]
     );
 
+    const supportedTimeframes = useMemo(
+        () =>
+            TIMEFRAME_ORDER.filter((tf) =>
+                isTimeframeSupported(selectedDataSource, tf)
+            ),
+        [selectedDataSource]
+    );
+
+    useEffect(() => {
+        if (supportedTimeframes.length === 0) return;
+        if (supportedTimeframes.includes(timeframe)) return;
+
+        const currentMs = TF_TO_MS[timeframe];
+        let closest = supportedTimeframes[0];
+        let bestDiff = Math.abs(TF_TO_MS[closest] - currentMs);
+        for (const candidate of supportedTimeframes) {
+            const diff = Math.abs(TF_TO_MS[candidate] - currentMs);
+            if (diff < bestDiff) {
+                bestDiff = diff;
+                closest = candidate;
+            }
+        }
+        if (closest !== timeframe) {
+            setTimeframe(closest);
+        }
+    }, [supportedTimeframes, timeframe]);
+
     const startDayOptions = getDaysInMonth(
         customStartParts.year,
         customStartParts.month
@@ -681,23 +711,23 @@ function KwantChartContent({
                             );
                         })}
                         {loadState !== "idle" && (
-                        <div
-                            aria-live="polite"
-                            title={loadState === "error" ? loadError : undefined}
-                            className={
-                                loadState === "loading"
-                                    ? "kwant-status kwant-status-loading"
-                                    : "kwant-status kwant-status-error"
-                            }
-                        >
-                            <span className="kwant-status-dot" />
-                            <span>
-                                {loadState === "loading"
-                                    ? "Loading"
-                                    : "Data error"}
-                            </span>
-                        </div>
-                    )}
+                            <div
+                                aria-live="polite"
+                                title={loadState === "error" ? loadError : undefined}
+                                className={
+                                    loadState === "loading"
+                                        ? "kwant-status kwant-status-loading"
+                                        : "kwant-status kwant-status-error"
+                                }
+                            >
+                                <span className="kwant-status-dot" />
+                                <span>
+                                    {loadState === "loading"
+                                        ? "Loading"
+                                        : "Data error"}
+                                </span>
+                            </div>
+                        )}
                 </div>
             </div>
             </div>
@@ -784,14 +814,30 @@ function KwantChartContent({
             <div className="flex flex-1 flex-col p-4">
                 <div className="z-5 grid w-full grid-cols-13 bg-black/70 text-center tracking-normal">
                     {Object.entries(TIMEFRAME_CAMELCASE).map(([short, tf]) => {
+                        const isSupported = supportedTimeframes.includes(tf);
                         const labelState: keyof typeof TIMEFRAME_LABEL_CLASSES =
-                            timeframe === tf ? "active" : "inactive";
+                            !isSupported
+                                ? "disabled"
+                                : timeframe === tf
+                                  ? "active"
+                                  : "inactive";
+                        const cellClasses = isSupported
+                            ? "cursor-pointer border-b-2 border-black py-2 hover:bg-black"
+                            : "cursor-not-allowed border-b-2 border-black py-2 text-white/30";
                         return (
                             <div
-                                className="cursor-pointer border-b-2 border-black py-2 text-white/70 hover:bg-black"
+                                className={cellClasses}
                                 key={short}
+                                aria-disabled={!isSupported}
+                                title={
+                                    isSupported
+                                        ? undefined
+                                        : "Not supported by selected source"
+                                }
                                 onClick={() => {
-                                    setTimeframe(tf);
+                                    if (isSupported) {
+                                        setTimeframe(tf);
+                                    }
                                 }}
                             >
                                 <span

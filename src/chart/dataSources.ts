@@ -358,11 +358,12 @@ const aggregateCandles = (
     return out;
 };
 
-const resolveIntervalPlan = (source: DataSource, tf: TimeFrame): IntervalPlan => {
+const getIntervalPlan = (
+    source: DataSource,
+    tf: TimeFrame
+): IntervalPlan | null => {
     const marketIntervals = EXCHANGE_INTERVALS[source.exchange]?.[source.market];
-    if (!marketIntervals) {
-        throw new Error(`Source not supported: ${source.exchange}`);
-    }
+    if (!marketIntervals) return null;
 
     const direct = marketIntervals[tf];
     if (direct) {
@@ -385,9 +386,7 @@ const resolveIntervalPlan = (source: DataSource, tf: TimeFrame): IntervalPlan =>
     }
 
     if (!best || !marketIntervals[best]) {
-        throw new Error(
-            `Timeframe ${tf} not supported for ${source.exchange} ${source.market}`
-        );
+        return null;
     }
 
     const baseMs = TF_TO_MS[best];
@@ -397,6 +396,23 @@ const resolveIntervalPlan = (source: DataSource, tf: TimeFrame): IntervalPlan =>
         groupSize: targetMs / baseMs,
     };
 };
+
+const resolveIntervalPlan = (source: DataSource, tf: TimeFrame): IntervalPlan => {
+    const plan = getIntervalPlan(source, tf);
+    if (plan) return plan;
+
+    const marketIntervals = EXCHANGE_INTERVALS[source.exchange]?.[source.market];
+    if (!marketIntervals) {
+        throw new Error(`Source not supported: ${source.exchange}`);
+    }
+
+    throw new Error(
+        `Timeframe ${tf} not supported for ${source.exchange} ${source.market}`
+    );
+};
+
+export const isTimeframeSupported = (source: DataSource, tf: TimeFrame) =>
+    getIntervalPlan(source, tf) !== null;
 
 const clampToRange = (
     candles: CandleData[],
