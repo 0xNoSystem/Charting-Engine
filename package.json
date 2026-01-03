@@ -1,6 +1,6 @@
 {
   "name": "kwant",
-  "version": "0.2.12",
+  "version": "0.2.13",
   "description": "React Binance candlestick chart component.",
   "license": "MIT",
   "type": "module",
