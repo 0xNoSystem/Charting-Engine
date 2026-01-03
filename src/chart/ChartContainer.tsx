@@ -94,7 +94,7 @@ const ChartContainer: React.FC<ChartContainerProps> = ({
             {/* MAIN ROW */}
             <div className="flex h-full w-full flex-1">
                 {/* LEFT: CHART */}
-                <div className="relative flex w-[93%] flex-1 overflow-hidden">
+                <div className="relative z-10 flex w-[93%] flex-1 overflow-hidden">
                     <div className="relative flex flex-1">
                         <Chart
                             asset={asset}
@@ -125,14 +125,14 @@ const ChartContainer: React.FC<ChartContainerProps> = ({
                 {/* RIGHT PRICE SCALE */}
                 <div
                     ref={rightRef}
-                    className="relative z-10 w-fit cursor-n-resize bg-black/20 text-white"
+                    className="relative z-0 w-fit cursor-n-resize bg-black/20 text-white"
                 >
                     <PriceScale />
                 </div>
             </div>
 
             {/* BOTTOM TIME SCALE */}
-            <div className="relative z-10 flex bg-black/20 text-white">
+            <div className="relative z-0 flex bg-black/20 text-white">
                 <div className="flex-1 cursor-w-resize">
                     <TimeScale />
                 </div>

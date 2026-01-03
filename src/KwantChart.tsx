@@ -224,6 +224,7 @@ async function loadCandles(
     asset: string,
     quoteAsset: string,
     setCached?: (c: CandleData[]) => void,
+    onFetchStart?: () => void,
     signal?: AbortSignal
 ): Promise<CandleData[]> {
     if (!asset?.trim()) return [];
@@ -278,6 +279,10 @@ async function loadCandles(
         typeof DOMException === "undefined"
             ? new Error("Aborted")
             : new DOMException("Aborted", "AbortError");
+
+    if (missing.length > 0) {
+        onFetchStart?.();
+    }
 
     for (const segment of missing) {
         if (signal?.aborted) throw abortError();
@@ -558,8 +563,8 @@ function KwantChartContent({
         const isStale = () =>
             requestId !== requestIdRef.current || controller.signal.aborted;
 
-        setLoadState("loading");
         setLoadError("");
+        setLoadState("idle");
 
         const timer = setTimeout(() => {
             (async () => {
@@ -574,6 +579,11 @@ function KwantChartContent({
                         (cached) => {
                             if (!isStale()) {
                                 setCandleData(cached);
+                            }
+                        },
+                        () => {
+                            if (!isStale()) {
+                                setLoadState("loading");
                             }
                         },
                         controller.signal
@@ -655,11 +665,29 @@ function KwantChartContent({
                         <div className="kwant-secondary-text rounded bg-white/10 px-3 py-1 text-xs uppercase tracking-[0.2em]">
                             {title || "Kwant Chart"}
                         </div>
-                        <h2 className="text-xl font-semibold tracking-wide">
+                        <h2 className="kwant-secondary-text text-xl font-semibold tracking-wide">
                             {asset}
                         </h2>
                     </div>
                     <div className="flex flex-wrap items-center gap-2">
+                        {loadState !== "idle" && (
+                            <div
+                                aria-live="polite"
+                                title={loadState === "error" ? loadError : undefined}
+                                className={
+                                    loadState === "loading"
+                                        ? "kwant-status kwant-status-loading"
+                                        : "kwant-status kwant-status-error"
+                                }
+                            >
+                                <span className="kwant-status-dot" />
+                                <span>
+                                    {loadState === "loading"
+                                        ? "Loading"
+                                        : "Data error"}
+                                </span>
+                            </div>
+                        )}
                         <div className="flex items-center gap-2 rounded border border-white/30 bg-black/70 px-3 py-1 text-xs uppercase tracking-[0.2em] text-white/70">
                             <select
                                 aria-label="Exchange"
@@ -710,106 +738,96 @@ function KwantChartContent({
                                 </button>
                             );
                         })}
-                        {loadState !== "idle" && (
+                    </div>
+                </div>
+
+                {rangePreset === "CUSTOM" && showDatePicker && (
+                    <div className="flex flex-wrap gap-4 border-b border-white/10 bg-black/50 px-4 py-3 text-sm text-white">
+                        {customRows.map((item) => (
                             <div
-                                aria-live="polite"
-                                title={loadState === "error" ? loadError : undefined}
-                                className={
-                                    loadState === "loading"
-                                        ? "kwant-status kwant-status-loading"
-                                        : "kwant-status kwant-status-error"
-                                }
+                                key={item.label}
+                                className="flex flex-wrap items-center gap-2"
                             >
-                                <span className="kwant-status-dot" />
-                                <span>
-                                    {loadState === "loading"
-                                        ? "Loading"
-                                        : "Data error"}
+                                <span className="w-14 text-xs tracking-wide text-white/60 uppercase">
+                                    {item.label}
+                                </span>
+                                <select
+                                    value={item.parts.year}
+                                    onChange={(e) =>
+                                        item.update({
+                                            year: Number(e.target.value),
+                                        })
+                                    }
+                                    className="rounded border border-white/30 bg-black/70 p-1"
+                                >
+                                    {YEARS.map((year) => (
+                                        <option key={year} value={year}>
+                                            {year}
+                                        </option>
+                                    ))}
+                                </select>
+                                <select
+                                    value={item.parts.month}
+                                    onChange={(e) =>
+                                        item.update({
+                                            month: Number(e.target.value),
+                                        })
+                                    }
+                                    className="rounded border border-white/30 bg-black/70 p-1"
+                                >
+                                    {MONTHS.map((month) => (
+                                        <option
+                                            key={month.value}
+                                            value={month.value}
+                                        >
+                                            {month.label}
+                                        </option>
+                                    ))}
+                                </select>
+                                <select
+                                    value={item.parts.day}
+                                    onChange={(e) =>
+                                        item.update({
+                                            day: Number(e.target.value),
+                                        })
+                                    }
+                                    className="rounded border border-white/30 bg-black/70 p-1"
+                                >
+                                    {Array.from(
+                                        { length: item.dayCount },
+                                        (_, idx) => idx + 1
+                                    ).map((day) => (
+                                        <option key={day} value={day}>
+                                            {day}
+                                        </option>
+                                    ))}
+                                </select>
+                                <input
+                                    type="time"
+                                    value={item.parts.time}
+                                    onChange={(e) =>
+                                        item.update({ time: e.target.value })
+                                    }
+                                    className="w-[115px] rounded border border-white/30 bg-gray-600/70 p-1"
+                                />
+                                <span className="text-xs text-white/50">
+                                    UTC
                                 </span>
                             </div>
-                        )}
-                </div>
-            </div>
-            </div>
+                        ))}
 
-            {rangePreset === "CUSTOM" && showDatePicker && (
-                <div className="flex flex-wrap gap-4 border-b border-white/10 bg-black/50 px-4 py-3 text-sm text-white">
-                    {customRows.map((item) => (
-                        <div
-                            key={item.label}
-                            className="flex flex-wrap items-center gap-2"
+                        <button
+                            onClick={() => {
+                                confirmCustomRange();
+                                setShowDatePicker(false);
+                            }}
+                            disabled={!isCustomDirty}
+                            className={APPLY_BUTTON_CLASSES[applyButtonState]}
                         >
-                            <span className="w-14 text-xs tracking-wide text-white/60 uppercase">
-                                {item.label}
-                            </span>
-                            <select
-                                value={item.parts.year}
-                                onChange={(e) =>
-                                    item.update({ year: Number(e.target.value) })
-                                }
-                                className="rounded border border-white/30 bg-black/70 p-1"
-                            >
-                                {YEARS.map((year) => (
-                                    <option key={year} value={year}>
-                                        {year}
-                                    </option>
-                                ))}
-                            </select>
-                            <select
-                                value={item.parts.month}
-                                onChange={(e) =>
-                                    item.update({
-                                        month: Number(e.target.value),
-                                    })
-                                }
-                                className="rounded border border-white/30 bg-black/70 p-1"
-                            >
-                                {MONTHS.map((month) => (
-                                    <option key={month.value} value={month.value}>
-                                        {month.label}
-                                    </option>
-                                ))}
-                            </select>
-                            <select
-                                value={item.parts.day}
-                                onChange={(e) =>
-                                    item.update({ day: Number(e.target.value) })
-                                }
-                                className="rounded border border-white/30 bg-black/70 p-1"
-                            >
-                                {Array.from(
-                                    { length: item.dayCount },
-                                    (_, idx) => idx + 1
-                                ).map((day) => (
-                                    <option key={day} value={day}>
-                                        {day}
-                                    </option>
-                                ))}
-                            </select>
-                            <input
-                                type="time"
-                                value={item.parts.time}
-                                onChange={(e) =>
-                                    item.update({ time: e.target.value })
-                                }
-                                className="w-[115px] rounded border border-white/30 bg-gray-600/70 p-1"
-                            />
-                            <span className="text-xs text-white/50">UTC</span>
-                        </div>
-                    ))}
-
-                    <button
-                        onClick={() => {
-                            confirmCustomRange();
-                            setShowDatePicker(false);
-                        }}
-                        disabled={!isCustomDirty}
-                        className={APPLY_BUTTON_CLASSES[applyButtonState]}
-                    >
-                        Apply
-                    </button>
-                </div>
-            )}
+                            Apply
+                        </button>
+                    </div>
+                )}
 
             <div className="flex flex-1 flex-col p-4">
                 <div className="z-5 grid w-full grid-cols-13 bg-black/70 text-center tracking-normal">
@@ -851,7 +869,7 @@ function KwantChartContent({
                 </div>
 
                 <div
-                    className="flex-1 rounded-b-lg border-2 border-black/30 z-1"
+                    className="flex-1 rounded-b-lg border-2 border-black/30 overflow-hidden z-1"
                     style={{
                         backgroundColor:
                             "var(--kwant-grid-color, #111212)",
@@ -864,6 +882,7 @@ function KwantChartContent({
                         candleData={candleData}
                     />
                 </div>
+            </div>
             </div>
         </div>
     );
@@ -887,8 +906,8 @@ export default function KwantChart({
     dataSource,
     quoteAsset,
     title,
-    width=1200,
-    height=700,
+    width = "100%",
+    height = "70vh",
     backgroundColor,
     gridColor,
     secondaryColor,

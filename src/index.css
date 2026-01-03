@@ -87,7 +87,7 @@
 }
 
 .kwant-chart .kwant-chart-canvas {
-  background-color: var(--kwant-grid-color, #111212)
+  background-color: transparent
 }
 
 .kwant-chart .pointer-events-none {
