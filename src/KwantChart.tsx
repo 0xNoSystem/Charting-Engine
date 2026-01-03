@@ -1,13 +1,17 @@
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import ChartProvider, { useChartContext } from "./chart/ChartContext";
 import ChartContainer from "./chart/ChartContainer";
 import { getTimeframeCache } from "./chart/candleCache";
-import { fetchCandles } from "./chart/utils";
+import { fetchCandles } from "./chart/dataSources";
 import type { CandleData } from "./types";
 import {
+    DEFAULT_DATA_SOURCE,
+    DEFAULT_QUOTE_ASSET,
     TIMEFRAME_CAMELCASE,
     TF_TO_MS,
-    fromTimeFrame,
+    type DataSource,
+    type ExchangeId,
+    type MarketType,
     type TimeFrame,
 } from "./types";
 
@@ -20,6 +24,35 @@ const RANGE_PRESETS: { id: RangePreset; label: string }[] = [
     { id: "YTD", label: "YTD" },
     { id: "CUSTOM", label: "Custom" },
 ];
+
+const EXCHANGE_OPTIONS: {
+    value: ExchangeId;
+    label: string;
+    markets: MarketType[];
+}[] = [
+    { value: "binance", label: "Binance", markets: ["spot", "futures"] },
+    { value: "bybit", label: "Bybit", markets: ["spot", "futures"] },
+    { value: "okx", label: "OKX", markets: ["spot", "futures"] },
+    { value: "coinbase", label: "Coinbase", markets: ["spot"] },
+    { value: "kraken", label: "Kraken", markets: ["spot", "futures"] },
+    { value: "kucoin", label: "KuCoin", markets: ["spot", "futures"] },
+    { value: "bitget", label: "Bitget", markets: ["spot", "futures"] },
+    { value: "gateio", label: "Gate.io", markets: ["spot", "futures"] },
+    { value: "htx", label: "HTX", markets: ["spot", "futures"] },
+    { value: "mexc", label: "MEXC", markets: ["spot", "futures"] },
+];
+
+const MARKET_OPTIONS: { value: MarketType; label: string }[] = [
+    { value: "spot", label: "Spot" },
+    { value: "futures", label: "Futures" },
+];
+
+const DEFAULT_MARKETS = MARKET_OPTIONS.map((option) => option.value);
+
+const getMarketsForExchange = (exchange: ExchangeId): MarketType[] => {
+    const match = EXCHANGE_OPTIONS.find((item) => item.value === exchange);
+    return match ? match.markets : DEFAULT_MARKETS;
+};
 
 const PRESET_DEFAULT_TF: Partial<Record<RangePreset, TimeFrame>> = {
     "24H": "hour1",
@@ -181,13 +214,20 @@ function buildCustomRangeISO(
 }
 
 async function loadCandles(
+    source: DataSource,
     tf: TimeFrame,
     startMs: number,
     endMs: number,
     asset: string,
-    setCached?: (c: CandleData[]) => void
+    quoteAsset: string,
+    setCached?: (c: CandleData[]) => void,
+    signal?: AbortSignal
 ): Promise<CandleData[]> {
-    if (!asset) return [];
+    if (!asset?.trim()) return [];
+
+    const normalizedAsset = asset.trim().toUpperCase();
+    const normalizedQuote =
+        quoteAsset.trim().toUpperCase() || DEFAULT_QUOTE_ASSET;
 
     const candleIntervalMs = TF_TO_MS[tf];
     const prefetchBuffer = 200 * candleIntervalMs;
@@ -208,54 +248,60 @@ async function loadCandles(
     const expectedCandles = Math.ceil(
         (normalizedEnd - normalizedStart) / candleIntervalMs
     );
-    const tfCache = getTimeframeCache(tf, asset);
+    const tfCache = getTimeframeCache(
+        source,
+        normalizedAsset,
+        normalizedQuote,
+        tf
+    );
     const { cached, missing } = collectCachedCandles(
         tfCache,
-        asset,
+        normalizedAsset,
         normalizedStart,
         normalizedEnd,
         candleIntervalMs
     );
-    const fullCache = cacheToArray(tfCache, asset);
+    const fullCache = cacheToArray(tfCache, normalizedAsset);
     if (setCached) {
         setCached(fullCache);
     }
-
-    console.log(
-        `%c[LOAD CANDLES] TF=${tf}, Expected=${expectedCandles}, Cached=${cached.length}`,
-        "color: orange; font-weight: bold;"
-    );
 
     // Serve straight from cache when we already have full coverage
     if (missing.length === 0 && cached.length > 0) {
         return fullCache;
     }
 
-    try {
-        for (const segment of missing) {
-            const data = await fetchCandles(
-                asset,
-                segment.start,
-                segment.end,
-                fromTimeFrame(tf)
-            );
+    const abortError = () =>
+        typeof DOMException === "undefined"
+            ? new Error("Aborted")
+            : new DOMException("Aborted", "AbortError");
 
-            for (const candle of data) {
-                tfCache.set(candle.start, candle);
-            }
+    for (const segment of missing) {
+        if (signal?.aborted) throw abortError();
+        const data = await fetchCandles(
+            source,
+            normalizedAsset,
+            normalizedQuote,
+            segment.start,
+            segment.end,
+            tf,
+            signal
+        );
+
+        for (const candle of data) {
+            tfCache.set(candle.start, candle);
         }
-    } catch (err) {
-        console.error("Failed to fetch candles", err);
-        return fullCache;
     }
 
-    const merged = cacheToArray(tfCache, asset);
+    const merged = cacheToArray(tfCache, normalizedAsset);
 
     return merged;
 }
 
 type KwantChartContentProps = {
     asset?: string;
+    dataSource?: DataSource;
+    quoteAsset?: string;
     title?: string;
     width?: number | string;
     height?: number | string;
@@ -272,6 +318,8 @@ const normalizeSize = (value?: number | string, fallback = "100%") => {
 
 function KwantChartContent({
     asset = "BTC",
+    dataSource = DEFAULT_DATA_SOURCE,
+    quoteAsset = DEFAULT_QUOTE_ASSET,
     title,
     width,
     height,
@@ -291,6 +339,18 @@ function KwantChartContent({
     const [timeframe, setTimeframe] = useState<TimeFrame>("hour4");
     const [candleData, setCandleData] = useState<CandleData[]>([]);
     const [showDatePicker, setShowDatePicker] = useState(true);
+    const [loadState, setLoadState] = useState<"idle" | "loading" | "error">(
+        "idle"
+    );
+    const [loadError, setLoadError] = useState("");
+    const requestIdRef = useRef(0);
+    const abortControllerRef = useRef<AbortController | null>(null);
+    const [selectedExchange, setSelectedExchange] = useState<ExchangeId>(
+        dataSource.exchange
+    );
+    const [selectedMarket, setSelectedMarket] = useState<MarketType>(
+        dataSource.market
+    );
 
     const [rangePreset, setRangePreset] = useState<RangePreset>("30D");
     const [customStartParts, setCustomStartParts] =
@@ -363,6 +423,48 @@ function KwantChartContent({
         }
     };
 
+    useEffect(() => {
+        const markets = getMarketsForExchange(dataSource.exchange);
+        setSelectedExchange(dataSource.exchange);
+        setSelectedMarket(
+            markets.includes(dataSource.market)
+                ? dataSource.market
+                : markets[0] ?? DEFAULT_DATA_SOURCE.market
+        );
+    }, [dataSource.exchange, dataSource.market]);
+
+    const handleExchangeChange = (
+        event: React.ChangeEvent<HTMLSelectElement>
+    ) => {
+        const nextExchange = event.target.value as ExchangeId;
+        const supportedMarkets = getMarketsForExchange(nextExchange);
+        setSelectedExchange(nextExchange);
+        setSelectedMarket((current) =>
+            supportedMarkets.includes(current)
+                ? current
+                : supportedMarkets[0] ?? DEFAULT_DATA_SOURCE.market
+        );
+    };
+
+    const handleMarketChange = (
+        event: React.ChangeEvent<HTMLSelectElement>
+    ) => {
+        setSelectedMarket(event.target.value as MarketType);
+    };
+
+    const selectedExchangeMarkets = useMemo(
+        () => getMarketsForExchange(selectedExchange),
+        [selectedExchange]
+    );
+
+    const selectedDataSource = useMemo(
+        () => ({
+            exchange: selectedExchange,
+            market: selectedMarket,
+        }),
+        [selectedExchange, selectedMarket]
+    );
+
     const startDayOptions = getDaysInMonth(
         customStartParts.year,
         customStartParts.month
@@ -419,21 +521,71 @@ function KwantChartContent({
         if (!asset) return;
         if (startTime <= 0 || endTime <= startTime) return;
 
+        abortControllerRef.current?.abort();
+        const controller = new AbortController();
+        abortControllerRef.current = controller;
+        const requestId = ++requestIdRef.current;
+        const isStale = () =>
+            requestId !== requestIdRef.current || controller.signal.aborted;
+
+        setLoadState("loading");
+        setLoadError("");
+
         const timer = setTimeout(() => {
             (async () => {
-                const data = await loadCandles(
-                    timeframe,
-                    startTime,
-                    endTime,
-                    asset,
-                    setCandleData
-                );
-                setCandleData(data);
+                try {
+                    const data = await loadCandles(
+                        selectedDataSource,
+                        timeframe,
+                        startTime,
+                        endTime,
+                        asset,
+                        quoteAsset,
+                        (cached) => {
+                            if (!isStale()) {
+                                setCandleData(cached);
+                            }
+                        },
+                        controller.signal
+                    );
+                    if (isStale()) return;
+                    setCandleData(data);
+                    setLoadState("idle");
+                } catch (error) {
+                    if (isStale()) return;
+                    const isAbortError =
+                        (typeof DOMException !== "undefined" &&
+                            error instanceof DOMException &&
+                            error.name === "AbortError") ||
+                        (error instanceof Error &&
+                            error.name === "AbortError");
+                    if (isAbortError) return;
+                    const message =
+                        error instanceof Error && error.message
+                            ? error.message
+                            : "Failed to load data";
+                    setLoadError(
+                        message.length > 80
+                            ? `${message.slice(0, 77)}...`
+                            : message
+                    );
+                    setLoadState("error");
+                }
             })();
         }, 200);
 
-        return () => clearTimeout(timer);
-    }, [startTime, endTime, timeframe, asset]);
+        return () => {
+            clearTimeout(timer);
+            controller.abort();
+        };
+    }, [
+        startTime,
+        endTime,
+        timeframe,
+        asset,
+        quoteAsset,
+        selectedDataSource,
+    ]);
 
     const containerStyle = {
         width: normalizeSize(width),
@@ -468,33 +620,86 @@ function KwantChartContent({
                         "var(--kwant-chart-container-bg, rgba(255,255,255,0.1))",
                 }}
             >
-            <div className="flex items-center justify-between border-b border-white/10 px-4 py-3">
-                <div className="flex items-center gap-3">
-                    <div className="kwant-secondary-text rounded bg-white/10 px-3 py-1 text-xs uppercase tracking-[0.2em]">
-                        {title || "Kwant Chart"}
+                <div className="flex items-center justify-between border-b border-white/10 px-4 py-3">
+                    <div className="flex items-center gap-3">
+                        <div className="kwant-secondary-text rounded bg-white/10 px-3 py-1 text-xs uppercase tracking-[0.2em]">
+                            {title || "Kwant Chart"}
+                        </div>
+                        <h2 className="text-xl font-semibold tracking-wide">
+                            {asset}
+                        </h2>
                     </div>
-                    <h2 className="text-xl font-semibold tracking-wide">
-                        {asset}
-                    </h2>
-                </div>
-                <div className="flex flex-wrap items-center gap-2">
-                    {RANGE_PRESETS.map((preset) => {
-                        const presetState: keyof typeof RANGE_PRESET_BUTTON_CLASSES =
-                            rangePreset === preset.id ? "active" : "inactive";
-                        return (
-                            <button
-                                key={preset.id}
-                                className={RANGE_PRESET_BUTTON_CLASSES[presetState]}
-                                onClick={() => {
-                                    handlePresetSelect(preset.id);
-                                    setShowDatePicker(true);
-                                }}
+                    <div className="flex flex-wrap items-center gap-2">
+                        <div className="flex items-center gap-2 rounded border border-white/30 bg-black/70 px-3 py-1 text-xs uppercase tracking-[0.2em] text-white/70">
+                            <select
+                                aria-label="Exchange"
+                                value={selectedExchange}
+                                onChange={handleExchangeChange}
+                                className="rounded border border-white/30 bg-black/70 px-2 py-1 text-xs uppercase tracking-[0.2em] text-white"
                             >
-                                {preset.label}
-                            </button>
-                        );
-                    })}
+                                {EXCHANGE_OPTIONS.map((option) => (
+                                    <option key={option.value} value={option.value}>
+                                        {option.label}
+                                    </option>
+                                ))}
+                            </select>
+                            <select
+                                aria-label="Market"
+                                value={selectedMarket}
+                                onChange={handleMarketChange}
+                                className="rounded border border-white/30 bg-black/70 px-2 py-1 text-xs uppercase tracking-[0.2em] text-white"
+                            >
+                                {MARKET_OPTIONS.map((option) => (
+                                    <option
+                                        key={option.value}
+                                        value={option.value}
+                                        disabled={
+                                            !selectedExchangeMarkets.includes(
+                                                option.value
+                                            )
+                                        }
+                                    >
+                                        {option.label}
+                                    </option>
+                                ))}
+                            </select>
+                        </div>
+                        {RANGE_PRESETS.map((preset) => {
+                            const presetState: keyof typeof RANGE_PRESET_BUTTON_CLASSES =
+                                rangePreset === preset.id ? "active" : "inactive";
+                            return (
+                                <button
+                                    key={preset.id}
+                                    className={RANGE_PRESET_BUTTON_CLASSES[presetState]}
+                                    onClick={() => {
+                                        handlePresetSelect(preset.id);
+                                        setShowDatePicker(true);
+                                    }}
+                                >
+                                    {preset.label}
+                                </button>
+                            );
+                        })}
+                        {loadState !== "idle" && (
+                        <div
+                            aria-live="polite"
+                            title={loadState === "error" ? loadError : undefined}
+                            className={
+                                loadState === "loading"
+                                    ? "kwant-status kwant-status-loading"
+                                    : "kwant-status kwant-status-error"
+                            }
+                        >
+                            <span className="kwant-status-dot" />
+                            <span>
+                                {loadState === "loading"
+                                    ? "Loading"
+                                    : "Data error"}
+                            </span>
+                        </div>
+                    )}
                 </div>
+            </div>
             </div>
 
             {rangePreset === "CUSTOM" && showDatePicker && (
@@ -614,13 +819,14 @@ function KwantChartContent({
                     />
                 </div>
             </div>
-            </div>
         </div>
     );
 }
 
 type KwantChartProps = {
     asset?: string;
+    dataSource?: DataSource;
+    quoteAsset?: string;
     title?: string;
     width?: number | string;
     height?: number | string;
@@ -632,6 +838,8 @@ type KwantChartProps = {
 
 export default function KwantChart({
     asset,
+    dataSource,
+    quoteAsset,
     title,
     width,
     height,
@@ -644,6 +852,8 @@ export default function KwantChart({
         <ChartProvider>
             <KwantChartContent
                 asset={asset}
+                dataSource={dataSource}
+                quoteAsset={quoteAsset}
                 title={title}
                 width={width}
                 height={height}

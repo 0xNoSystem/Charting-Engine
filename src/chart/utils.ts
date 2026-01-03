@@ -2,68 +2,6 @@ import type { CandleData, HyperliquidCandle } from "../types";
 
 export type { CandleData } from "../types";
 
-type BinanceKline = [
-    number,
-    string,
-    string,
-    string,
-    string,
-    string,
-    number,
-    string,
-    number,
-    string,
-    string,
-];
-
-export async function fetchCandles(
-    asset: string,
-    startTime: number,
-    endTime: number,
-    interval: string
-): Promise<CandleData[]> {
-    const symbol = asset.toUpperCase() + "USDT";
-    const all: CandleData[] = [];
-
-    let fetchStart = startTime;
-
-    while (fetchStart < endTime) {
-        const url =
-            `https://fapi.binance.com/fapi/v1/klines?symbol=${symbol}` +
-            `&interval=${interval}&startTime=${fetchStart}&endTime=${endTime}&limit=1500`;
-
-        const res = await fetch(url);
-        if (!res.ok) throw new Error(`Binance error ${res.status}`);
-
-        const data = (await res.json()) as BinanceKline[];
-        if (data.length === 0) break;
-
-        // Map into CandleData
-        const mapped = data.map((k) => ({
-            start: k[0],
-            open: parseFloat(k[1]),
-            high: parseFloat(k[2]),
-            low: parseFloat(k[3]),
-            close: parseFloat(k[4]),
-            volume: parseFloat(k[5]),
-            end: k[6],
-            trades: k[8],
-            asset,
-            interval,
-        }));
-
-        all.push(...mapped);
-
-        // Move to next candle
-        fetchStart = data[data.length - 1][0] + 1;
-
-        // Safety break (avoid infinite loops)
-        if (data.length < 1000) break;
-    }
-
-    return all;
-}
-
 function parseCandle(raw: HyperliquidCandle): CandleData {
     return {
         open: parseFloat(raw.o),
