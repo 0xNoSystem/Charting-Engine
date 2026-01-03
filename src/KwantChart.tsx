@@ -224,7 +224,6 @@ async function loadCandles(
     asset: string,
     quoteAsset: string,
     setCached?: (c: CandleData[]) => void,
-    onFetchStart?: () => void,
     signal?: AbortSignal
 ): Promise<CandleData[]> {
     if (!asset?.trim()) return [];
@@ -279,10 +278,6 @@ async function loadCandles(
         typeof DOMException === "undefined"
             ? new Error("Aborted")
             : new DOMException("Aborted", "AbortError");
-
-    if (missing.length > 0) {
-        onFetchStart?.();
-    }
 
     for (const segment of missing) {
         if (signal?.aborted) throw abortError();
@@ -347,7 +342,7 @@ function KwantChartContent({
     const [timeframe, setTimeframe] = useState<TimeFrame>("hour4");
     const [candleData, setCandleData] = useState<CandleData[]>([]);
     const [showDatePicker, setShowDatePicker] = useState(true);
-    const [loadState, setLoadState] = useState<"idle" | "loading" | "error">(
+    const [loadState, setLoadState] = useState<"idle" | "error">(
         "idle"
     );
     const [loadError, setLoadError] = useState("");
@@ -581,11 +576,6 @@ function KwantChartContent({
                                 setCandleData(cached);
                             }
                         },
-                        () => {
-                            if (!isStale()) {
-                                setLoadState("loading");
-                            }
-                        },
                         controller.signal
                     );
                     if (isStale()) return;
@@ -650,45 +640,35 @@ function KwantChartContent({
             ? { ["--kwant-crosshair-color" as string]: crosshairColor }
             : {}),
     };
+    const baseTitle = title || "Kwant Chart";
+    const titleLabel =
+        loadState === "error" ? `DATA ERROR` : baseTitle;
+    const titleToneClass =
+        loadState === "error" ? "text-red-400" : "kwant-secondary-text";
+    const titleTooltip = loadState === "error" ? loadError : undefined;
 
     return (
         <div className="kwant-chart" style={containerStyle}>
             <div
-                className="mb-30 flex h-full w-full flex-grow flex-col rounded-lg p-4 tracking-widest"
-                style={{
-                    backgroundColor:
-                        "var(--kwant-chart-container-bg, rgba(255,255,255,0.1))",
+                className="mb-30 flex h-full w-full flex-grow flex-col rounded-lg px-3 py-3 tracking-widest"
+                style={{ backgroundColor: "var(--kwant-chart-container-bg, rgba(255,255,255,0.1))",
                 }}
             >
                 <div className="flex items-center justify-between border-b border-white/10 px-4 py-3">
                     <div className="flex items-center gap-3">
-                        <div className="kwant-secondary-text rounded bg-white/10 px-3 py-1 text-xs uppercase tracking-[0.2em]">
-                            {title || "Kwant Chart"}
+                        <div
+                            aria-live="polite"
+                            title={titleTooltip}
+                            className={`rounded bg-white/10 px-3 py-1 text-xs uppercase tracking-[0.2em] ${titleToneClass}`}
+                        >
+                            {titleLabel}
                         </div>
                         <h2 className="kwant-secondary-text text-xl font-semibold tracking-wide">
                             {asset}
                         </h2>
                     </div>
                     <div className="flex flex-wrap items-center gap-2">
-                        {loadState !== "idle" && (
-                            <div
-                                aria-live="polite"
-                                title={loadState === "error" ? loadError : undefined}
-                                className={
-                                    loadState === "loading"
-                                        ? "kwant-status kwant-status-loading"
-                                        : "kwant-status kwant-status-error"
-                                }
-                            >
-                                <span className="kwant-status-dot" />
-                                <span>
-                                    {loadState === "loading"
-                                        ? "Loading"
-                                        : "Data error"}
-                                </span>
-                            </div>
-                        )}
-                        <div className="flex items-center gap-2 rounded border border-white/30 bg-black/70 px-3 py-1 text-xs uppercase tracking-[0.2em] text-white/70">
+                        <div className="flex items-center gap-2 rounded border border-white/30 bg-black/70 text-xs uppercase tracking-[0.2em] text-white/70">
                             <select
                                 aria-label="Exchange"
                                 value={selectedExchange}
@@ -829,7 +809,7 @@ function KwantChartContent({
                     </div>
                 )}
 
-            <div className="flex flex-1 flex-col p-4">
+            <div className="flex flex-1 flex-col px-3 py-3">
                 <div className="z-5 grid w-full grid-cols-13 bg-black/70 text-center tracking-normal">
                     {Object.entries(TIMEFRAME_CAMELCASE).map(([short, tf]) => {
                         const isSupported = supportedTimeframes.includes(tf);
