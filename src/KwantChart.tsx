@@ -620,6 +620,8 @@ function KwantChartContent({
     const containerStyle = {
         width: normalizeSize(width),
         height: normalizeSize(height),
+        maxWidth: "100%",
+        maxHeight: "100%",
         minHeight: height === undefined ? "70vh" : undefined,
         ...(backgroundColor
             ? {
@@ -886,27 +888,32 @@ export default function KwantChart({
     dataSource,
     quoteAsset,
     title,
-    width = "100%",
-    height = "70vh",
+    width,
+    height,
     backgroundColor,
     gridColor,
     secondaryColor,
     crosshairColor,
 }: KwantChartProps) {
+    const containerWidth = normalizeSize(width, "100%");
+    const containerHeight = normalizeSize(height, "70vh");
+
     return (
-        <ChartProvider>
-            <KwantChartContent
-                asset={asset}
-                dataSource={dataSource}
-                quoteAsset={quoteAsset}
-                title={title}
-                width={width}
-                height={height}
-                backgroundColor={backgroundColor}
-                gridColor={gridColor}
-                secondaryColor={secondaryColor}
-                crosshairColor={crosshairColor}
-            />
-        </ChartProvider>
+        <div style={{ width: containerWidth, height: containerHeight }}>
+            <ChartProvider>
+                <KwantChartContent
+                    asset={asset}
+                    dataSource={dataSource}
+                    quoteAsset={quoteAsset}
+                    title={title}
+                    width="100%"
+                    height="100%"
+                    backgroundColor={backgroundColor}
+                    gridColor={gridColor}
+                    secondaryColor={secondaryColor}
+                    crosshairColor={crosshairColor}
+                />
+            </ChartProvider>
+        </div>
     );
 }
