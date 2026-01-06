@@ -1,6 +1,6 @@
 {
   "name": "kwant",
-  "version": "1.0.4",
+  "version": "1.0.5",
   "description": "React Multi-source candlestick chart component.",
   "license": "MIT",
   "type": "module",
