@@ -1,9 +1,17 @@
 {
   "name": "kwant",
   "version": "1.0.3",
-  "description": "React Binance candlestick chart component.",
+  "description": "React Multi-source candlestick chart component.",
   "license": "MIT",
   "type": "module",
+  "homepage": "https://www.npmjs.com/package/kwant",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/0xNoSystem/Charting-Engine"
+  },
+  "bugs": {
+    "url": "https://github.com/0xNoSystem/Charting-Engine/issues"
+  },
   "main": "./dist/index.cjs",
   "module": "./dist/index.mjs",
   "types": "./dist/index.d.ts",
