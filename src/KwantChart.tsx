@@ -822,8 +822,8 @@ function KwantChartContent({
                                   ? "active"
                                   : "inactive";
                         const cellClasses = isSupported
-                            ? "cursor-pointer border-b-2 border-black py-2 hover:bg-black"
-                            : "cursor-not-allowed border-b-2 border-black py-2 text-white/30";
+                            ? "cursor-pointer py-2 hover:bg-black"
+                            : "cursor-not-allowed py-2 text-white/30";
                         return (
                             <div
                                 className={cellClasses}
@@ -851,7 +851,7 @@ function KwantChartContent({
                 </div>
 
                 <div
-                    className="flex-1 rounded-b-lg border-2 border-black/30 overflow-hidden z-1"
+                    className="flex-1 border-black/30 overflow-hidden z-1"
                     style={{
                         backgroundColor:
                             "var(--kwant-grid-color, #111212)",
