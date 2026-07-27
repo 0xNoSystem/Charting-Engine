@@ -3,7 +3,9 @@ import Chart from "./Chart";
 import PriceScale from "./visual/PriceScale";
 import TimeScale from "./visual/TimeScale";
 import IntervalOverlay from "./visual/Interval";
-import ChartSettings from "./visual/ChartSettings";
+import ChartSettings, {
+    type ChartSettingsValue,
+} from "./visual/ChartSettings";
 import CandleInfo from "./visual/CandleInfo";
 import { useChartContext } from "./ChartContextStore";
 import { xToTime } from "./utils";
@@ -16,6 +18,13 @@ interface ChartContainerProps {
     tf: TimeFrame;
     settingInterval: boolean;
     candleData: CandleData[];
+    livePrice: boolean;
+    configurable: boolean;
+    settingsValue: ChartSettingsValue;
+    defaultSettingsValue: ChartSettingsValue;
+    onApplySettings: (value: ChartSettingsValue) => void;
+    onResetSettings: () => void;
+    onSaveSettings: () => boolean;
 }
 
 const ChartContainer: React.FC<ChartContainerProps> = ({
@@ -23,6 +32,13 @@ const ChartContainer: React.FC<ChartContainerProps> = ({
     tf,
     settingInterval,
     candleData,
+    livePrice,
+    configurable,
+    settingsValue,
+    defaultSettingsValue,
+    onApplySettings,
+    onResetSettings,
+    onSaveSettings,
 }) => {
     const {
         setCandles,
@@ -30,8 +46,6 @@ const ChartContainer: React.FC<ChartContainerProps> = ({
         startTime,
         endTime,
         candles,
-        candleColor,
-        setCandleColor,
         width,
         crosshairX,
         mouseOnChart,
@@ -89,8 +103,21 @@ const ChartContainer: React.FC<ChartContainerProps> = ({
         setHoveredCandle(nearest);
     }, [selectingInterval, crosshairX, width, startTime, endTime, candles]);
 
+    useEffect(() => {
+        if (!setting) return;
+        const closeOnEscape = (event: KeyboardEvent) => {
+            if (event.key === "Escape") setSetting(false);
+        };
+        window.addEventListener("keydown", closeOnEscape);
+        return () => window.removeEventListener("keydown", closeOnEscape);
+    }, [setting]);
+
+    useEffect(() => {
+        if (!configurable) setSetting(false);
+    }, [configurable]);
+
     return (
-        <div className="flex h-full flex-1 flex-col overflow-hidden">
+        <div className="relative flex h-full flex-1 flex-col overflow-hidden">
             {/* MAIN ROW */}
             <div className="flex h-full w-full flex-1">
                 {/* LEFT: CHART */}
@@ -100,22 +127,29 @@ const ChartContainer: React.FC<ChartContainerProps> = ({
                             asset={asset}
                             tf={tf}
                             settingInterval={settingInterval}
+                            livePrice={livePrice}
                         />
                         <IntervalOverlay />
                         {hoveredCandle && mouseOnChart && (
                             <CandleInfo candle={hoveredCandle} />
                         )}
                     </div>
-                    {setting && (
-                        <div className="absolute inset-0 z-50 flex items-center justify-center bg-black/70">
+                    {configurable && setting && (
+                        <div
+                            className="kwant-settings-overlay"
+                            style={{ zIndex: 1000, padding: 12 }}
+                            onMouseDown={(event) => {
+                                if (event.target === event.currentTarget) {
+                                    setSetting(false);
+                                }
+                            }}
+                        >
                             <ChartSettings
-                                initialColors={candleColor}
-                                onApply={(colors) =>
-                                    setCandleColor(colors.up, colors.down)
-                                }
-                                onReset={() =>
-                                    setCandleColor("#cf7b15", "#c4c3c2")
-                                }
+                                initialValue={settingsValue}
+                                defaultValue={defaultSettingsValue}
+                                onApply={onApplySettings}
+                                onReset={onResetSettings}
+                                onSave={onSaveSettings}
                                 onClose={() => setSetting(false)}
                             />
                         </div>
@@ -127,7 +161,7 @@ const ChartContainer: React.FC<ChartContainerProps> = ({
                     ref={rightRef}
                     className="relative z-0 w-fit cursor-n-resize bg-black/20 text-white"
                 >
-                    <PriceScale />
+                    <PriceScale livePrice={livePrice} />
                 </div>
             </div>
 
@@ -138,14 +172,15 @@ const ChartContainer: React.FC<ChartContainerProps> = ({
                 </div>
 
                 {/* Right-side width preview box */}
-                <div
-                    className="flex items-center justify-center bg-black/60"
-                    style={{ width: rightWidth }}
-                >
-                    <button
+                {configurable && (
+                    <div
+                        className="flex items-center justify-center bg-black/60"
+                        style={{ width: rightWidth }}
+                    >
+                        <button
                         type="button"
                         className="text-white/60 transition hover:text-white"
-                        onClick={() => setSetting((prev) => !prev)}
+                            onClick={() => setSetting((current) => !current)}
                         aria-label="Toggle chart settings"
                         title="Settings"
                     >
@@ -163,9 +198,11 @@ const ChartContainer: React.FC<ChartContainerProps> = ({
                             <path d="M12.22 2h-.44a2 2 0 0 0-1.94 1.5l-.14.47a2 2 0 0 1-2.63 1.3l-.41-.14a2 2 0 0 0-2.5 1.3l-.22.42a2 2 0 0 0 .44 2.34l.38.38a2 2 0 0 1 0 2.83l-.38.38a2 2 0 0 0-.44 2.34l.22.42a2 2 0 0 0 2.5 1.3l.41-.14a2 2 0 0 1 2.63 1.3l.14.47a2 2 0 0 0 1.94 1.5h.44a2 2 0 0 0 1.94-1.5l.14-.47a2 2 0 0 1 2.63-1.3l.41.14a2 2 0 0 0 2.5-1.3l.22-.42a2 2 0 0 0-.44-2.34l-.38-.38a2 2 0 0 1 0-2.83l.38-.38a2 2 0 0 0 .44-2.34l-.22-.42a2 2 0 0 0-2.5-1.3l-.41.14a2 2 0 0 1-2.63-1.3l-.14-.47A2 2 0 0 0 12.22 2z" />
                             <circle cx="12" cy="12" r="3" />
                         </svg>
-                    </button>
-                </div>
+                        </button>
+                    </div>
+                )}
             </div>
+
         </div>
     );
 };

@@ -24,6 +24,7 @@ export interface ChartProps {
     asset: string;
     tf: TimeFrame;
     settingInterval: boolean;
+    livePrice: boolean;
 }
 
 type CandleCanvasProps = {
@@ -282,7 +283,12 @@ function aggregateCandles(c: CandleData[], groupSize: number): CandleData[] {
     return out;
 }
 
-const Chart: React.FC<ChartProps> = ({ asset, tf, settingInterval }) => {
+const Chart: React.FC<ChartProps> = ({
+    asset,
+    tf,
+    settingInterval,
+    livePrice,
+}) => {
     const {
         candles,
         setTf,
@@ -308,6 +314,18 @@ const Chart: React.FC<ChartProps> = ({ asset, tf, settingInterval }) => {
 
     const [isInside, setIsInside] = useState(false);
     const wheelBusy = useRef(false);
+    const latestCandle = candles[candles.length - 1];
+    const latestPriceY =
+        latestCandle &&
+        Number.isFinite(latestCandle.close) &&
+        height > 0 &&
+        maxPrice > minPrice
+            ? priceToY(latestCandle.close, minPrice, maxPrice, height)
+            : null;
+    const latestPriceColor =
+        latestCandle && latestCandle.close >= latestCandle.open
+            ? candleColor.up
+            : candleColor.down;
 
     const containerRef = useRef<HTMLDivElement>(null);
     const touchState = useRef<{
@@ -948,6 +966,22 @@ const Chart: React.FC<ChartProps> = ({ asset, tf, settingInterval }) => {
                 height={height}
                 className="pointer-events-none absolute inset-0"
             >
+                {livePrice &&
+                    latestPriceY !== null &&
+                    latestPriceY >= 0 &&
+                    latestPriceY <= height && (
+                        <line
+                            x1={0}
+                            y1={Math.round(latestPriceY) + 0.5}
+                            x2={width}
+                            y2={Math.round(latestPriceY) + 0.5}
+                            stroke={latestPriceColor}
+                            strokeWidth={1}
+                            strokeDasharray="1 4"
+                            strokeLinecap="round"
+                            opacity={0.82}
+                        />
+                    )}
                 {isInside && !settingInterval && <CrossHair />}
             </svg>
         </div>

@@ -17,5 +17,6 @@ export default defineConfig({
   outExtension({ format }) {
     return { js: format === "esm" ? ".mjs" : ".cjs" };
   },
-  external: ["react", "react-dom"]
+  external: ["react", "react-dom"],
+  noExternal: ["react-colorful"],
 });

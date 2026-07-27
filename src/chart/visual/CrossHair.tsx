@@ -21,7 +21,7 @@ const CrossHair = () => {
                 stroke="var(--kwant-crosshair-color, #fff)"
                 strokeWidth={1}
                 opacity={0.5}
-                strokeDasharray="6 4"
+                strokeDasharray="var(--kwant-crosshair-dash, 6 4)"
             />
 
             {/* Horizontal line */}
@@ -33,7 +33,7 @@ const CrossHair = () => {
                 stroke="var(--kwant-crosshair-color, #fff)"
                 strokeWidth={1}
                 opacity={0.5}
-                strokeDasharray="6 4"
+                strokeDasharray="var(--kwant-crosshair-dash, 6 4)"
             />
 
             {/* Center marker */}

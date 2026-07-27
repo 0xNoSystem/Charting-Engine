@@ -1,19 +1,16 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import ChartProvider, { useChartContext } from "./chart/ChartContext";
 import ChartContainer from "./chart/ChartContainer";
-import { getTimeframeCache } from "./chart/candleCache";
-import { fetchCandles, isTimeframeSupported } from "./chart/dataSources";
-import type { CandleData } from "./types";
+import { getTimeframeCache, peekTimeframeCache } from "./chart/candleCache";
 import {
-    DEFAULT_DATA_SOURCE,
-    DEFAULT_QUOTE_ASSET,
-    TIMEFRAME_CAMELCASE,
-    TF_TO_MS,
-    type DataSource,
-    type ExchangeId,
-    type MarketType,
-    type TimeFrame,
-} from "./types";
+    DEFAULT_CANDLE_COLORS,
+    DEFAULT_CHART_APPEARANCE,
+    type ChartAppearance,
+    type ChartSettingsValue,
+    type CrosshairLineStyle,
+} from "./chart/visual/ChartSettings";
+import type { CandleData, TimeFrame } from "./types";
+import { TIMEFRAME_CAMELCASE } from "./types";
 
 type RangePreset = "24H" | "7D" | "30D" | "YTD" | "CUSTOM";
 
@@ -25,286 +22,132 @@ const RANGE_PRESETS: { id: RangePreset; label: string }[] = [
     { id: "CUSTOM", label: "Custom" },
 ];
 
-const EXCHANGE_OPTIONS: {
-    value: ExchangeId;
-    label: string;
-    markets: MarketType[];
-}[] = [
-    { value: "binance", label: "Binance", markets: ["spot", "futures"] },
-    { value: "bybit", label: "Bybit", markets: ["spot", "futures"] },
-    { value: "okx", label: "OKX", markets: ["spot", "futures"] },
-    { value: "coinbase", label: "Coinbase", markets: ["spot"] },
-    { value: "kraken", label: "Kraken", markets: ["spot", "futures"] },
-    { value: "kucoin", label: "KuCoin", markets: ["spot", "futures"] },
-    { value: "bitget", label: "Bitget", markets: ["spot", "futures"] },
-    { value: "gateio", label: "Gate.io", markets: ["spot", "futures"] },
-    { value: "htx", label: "HTX", markets: ["spot", "futures"] },
-    { value: "mexc", label: "MEXC", markets: ["spot", "futures"] },
-];
-
-const MARKET_OPTIONS: { value: MarketType; label: string }[] = [
-    { value: "spot", label: "Spot" },
-    { value: "futures", label: "Futures" },
-];
-
-const DEFAULT_MARKETS = MARKET_OPTIONS.map((option) => option.value);
-
-const getMarketsForExchange = (exchange: ExchangeId): MarketType[] => {
-    const match = EXCHANGE_OPTIONS.find((item) => item.value === exchange);
-    return match ? match.markets : DEFAULT_MARKETS;
-};
-
-const PRESET_DEFAULT_TF: Partial<Record<RangePreset, TimeFrame>> = {
-    "24H": "hour1",
-    "7D": "hour1",
-    "30D": "hour4",
-    YTD: "day1",
-};
+const TIMEFRAME_ORDER = Object.values(TIMEFRAME_CAMELCASE) as TimeFrame[];
+const TIMEFRAME_BY_INTERVAL = new Map<string, TimeFrame>(
+    Object.entries(TIMEFRAME_CAMELCASE).map(([interval, timeframe]) => [
+        interval,
+        timeframe,
+    ])
+);
+const SETTINGS_STORAGE_PREFIX = "kwant-chart:settings:";
 
 const RANGE_PRESET_BUTTON_CLASSES = {
-    active: "kwant-secondary-border kwant-secondary-text kwant-secondary-hover rounded border px-3 py-1 text-sm transition",
+    active: "kwant-secondary-border kwant-secondary-text kwant-secondary-hover rounded border transition",
     inactive:
-        "rounded border px-3 py-1 text-sm transition border-white/30 text-white/70 hover:border-white/60",
-} as const;
-
-const APPLY_BUTTON_CLASSES = {
-    enabled:
-        "kwant-secondary-border kwant-secondary-text kwant-secondary-hover self-start rounded border px-3 py-1 text-xs font-semibold transition",
-    disabled:
-        "self-start rounded border px-3 py-1 text-xs font-semibold transition cursor-not-allowed border-white/20 text-white/30",
+        "rounded border transition border-white/30 text-white/70 hover:border-white/60",
 } as const;
 
 const TIMEFRAME_LABEL_CLASSES = {
-    active: "kwant-secondary-text px-2 text-center text-sm font-bold",
-    inactive: "px-2 text-center text-sm text-white/70",
-    disabled: "px-2 text-center text-sm text-white/30",
+    active: "kwant-secondary-text font-bold",
+    inactive: "text-white/70",
+    disabled: "text-white/30",
 } as const;
 
-const TIMEFRAME_ORDER = Object.values(TIMEFRAME_CAMELCASE) as TimeFrame[];
-
-type CustomDateParts = {
-    year: number;
-    month: number; // 1-based
-    day: number;
-    time: string; // HH:MM (24h)
+const normalizeSize = (value?: number | string, fallback = "100%") => {
+    if (value === undefined) return fallback;
+    return typeof value === "number" ? `${value}px` : value;
 };
 
-const CURRENT_YEAR = new Date().getUTCFullYear();
-const YEARS = Array.from(
-    { length: CURRENT_YEAR - 2016 + 1 },
-    (_, idx) => 2016 + idx
-);
-const MONTHS = [
-    { value: 1, label: "Jan" },
-    { value: 2, label: "Feb" },
-    { value: 3, label: "Mar" },
-    { value: 4, label: "Apr" },
-    { value: 5, label: "May" },
-    { value: 6, label: "Jun" },
-    { value: 7, label: "Jul" },
-    { value: 8, label: "Aug" },
-    { value: 9, label: "Sep" },
-    { value: 10, label: "Oct" },
-    { value: 11, label: "Nov" },
-    { value: 12, label: "Dec" },
-];
+const cloneCandle = (candle: CandleData): CandleData => ({ ...candle });
 
-function getDaysInMonth(year: number, month: number): number {
-    return new Date(Date.UTC(year, month, 0)).getUTCDate();
-}
-
-function dateToParts(date: Date): CustomDateParts {
-    const year = date.getUTCFullYear();
-    const month = date.getUTCMonth() + 1;
-    const day = date.getUTCDate();
-    const hours = String(date.getUTCHours()).padStart(2, "0");
-    const minutes = String(date.getUTCMinutes()).padStart(2, "0");
-    return { year, month, day, time: `${hours}:${minutes}` };
-}
-
-function partsToMs(parts: CustomDateParts): number {
-    const [hours, minutes] = parts.time.split(":").map((n) => Number(n) || 0);
-    return Date.UTC(parts.year, parts.month - 1, parts.day, hours, minutes);
-}
-
-function sanitizeTime(value: string): string {
-    if (!value) return "00:00";
-    const [hours = "0", minutes = "0"] = value.split(":");
-    const h = Math.min(23, Math.max(0, Number(hours)));
-    const m = Math.min(59, Math.max(0, Number(minutes)));
-    return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
-}
-
-function normalizeParts(parts: CustomDateParts): CustomDateParts {
-    const maxDay = getDaysInMonth(parts.year, parts.month);
-    const day = Math.min(parts.day, maxDay);
-    return { ...parts, day, time: sanitizeTime(parts.time) };
-}
-
-function normalizeRange(
-    startMs: number,
-    endMs: number,
-    candleIntervalMs: number
-) {
-    const clampedStart = Math.max(0, startMs);
-    const normalizedStart = clampedStart - (clampedStart % candleIntervalMs);
-    const normalizedEnd = Math.max(
-        normalizedStart + candleIntervalMs,
-        Math.ceil(endMs / candleIntervalMs) * candleIntervalMs
+function isChartSettingsValue(value: unknown): value is ChartSettingsValue {
+    if (!value || typeof value !== "object") return false;
+    const candidate = value as Partial<ChartSettingsValue>;
+    return Boolean(
+        candidate.candles &&
+            typeof candidate.candles.up === "string" &&
+            typeof candidate.candles.down === "string" &&
+            candidate.appearance &&
+            typeof candidate.appearance.backgroundColor === "string" &&
+            typeof candidate.appearance.gridColor === "string" &&
+            typeof candidate.appearance.secondaryColor === "string" &&
+            typeof candidate.appearance.crosshairColor === "string" &&
+            (candidate.appearance.crosshairLineStyle === "solid" ||
+                candidate.appearance.crosshairLineStyle === "dashed" ||
+                candidate.appearance.crosshairLineStyle === "dotted")
     );
-
-    return { normalizedStart, normalizedEnd };
 }
 
-function collectCachedCandles(
-    tfCache: Map<number, CandleData>,
-    asset: string,
-    normalizedStart: number,
-    normalizedEnd: number,
-    candleIntervalMs: number
-) {
-    const cached: CandleData[] = [];
-    const missing: { start: number; end: number }[] = [];
+function isValidCandle(candle: CandleData): boolean {
+    const numericValues = [
+        candle.open,
+        candle.high,
+        candle.low,
+        candle.close,
+        candle.start,
+        candle.end,
+        candle.volume,
+        candle.trades,
+    ];
+    if (!numericValues.every(Number.isFinite) || candle.end <= candle.start) {
+        return false;
+    }
+    if (candle.volume < 0 || candle.trades < 0) return false;
+    if (candle.high < Math.max(candle.open, candle.close, candle.low)) {
+        return false;
+    }
+    if (candle.low > Math.min(candle.open, candle.close, candle.high)) {
+        return false;
+    }
+    return Boolean(candle.asset?.trim() && candle.interval);
+}
 
-    let gapStart: number | null = null;
+function normalizeCandles(candles: CandleData[]) {
+    const grouped = new Map<TimeFrame, Map<number, CandleData>>();
 
-    for (let ts = normalizedStart; ts < normalizedEnd; ts += candleIntervalMs) {
-        const candle = tfCache.get(ts);
-
-        if (candle && candle.asset === asset) {
-            cached.push(candle);
-            if (gapStart !== null) {
-                missing.push({ start: gapStart, end: ts });
-                gapStart = null;
-            }
-        } else if (gapStart === null) {
-            gapStart = ts;
+    for (const candle of candles) {
+        const timeframe = TIMEFRAME_BY_INTERVAL.get(candle.interval);
+        if (!timeframe || !isValidCandle(candle)) continue;
+        let byTimestamp = grouped.get(timeframe);
+        if (!byTimestamp) {
+            byTimestamp = new Map();
+            grouped.set(timeframe, byTimestamp);
         }
+        // Later entries deliberately replace earlier corrections for the same bar.
+        byTimestamp.set(candle.start, cloneCandle(candle));
     }
 
-    if (gapStart !== null) {
-        missing.push({ start: gapStart, end: normalizedEnd });
-    }
-
-    return { cached, missing };
+    return new Map(
+        Array.from(grouped, ([timeframe, byTimestamp]) => [
+            timeframe,
+            Array.from(byTimestamp.values()).sort((a, b) => a.start - b.start),
+        ])
+    );
 }
 
-function cacheToArray(tfCache: Map<number, CandleData>, asset: string) {
-    return Array.from(tfCache.values())
-        .filter((c) => c.asset === asset)
-        .sort((a, b) => a.start - b.start);
+function getCachedCandles(sourceName: string, timeframe: TimeFrame) {
+    return Array.from(
+        peekTimeframeCache(sourceName, timeframe)?.values() ?? []
+    ).sort((a, b) => a.start - b.start);
 }
 
-function buildCustomRangeISO(
-    startParts: CustomDateParts,
-    endParts: CustomDateParts
-) {
-    const now = Date.now();
-    const startMsRaw = partsToMs(startParts);
-    const endMsRaw = partsToMs(endParts);
-
-    const startMs = Math.min(startMsRaw, now);
-    let endMs = Math.min(endMsRaw, now);
-
-    if (endMs <= startMs) {
-        endMs = Math.min(now, startMs + 60 * 60 * 1000);
+function getSeriesBounds(candles: CandleData[]) {
+    let start = Infinity;
+    let end = -Infinity;
+    for (const candle of candles) {
+        start = Math.min(start, candle.start);
+        end = Math.max(end, candle.end);
     }
-
-    return {
-        start: new Date(startMs).toISOString().slice(0, 16),
-        end: new Date(endMs).toISOString().slice(0, 16),
-    };
+    return { start, end };
 }
 
-async function loadCandles(
-    source: DataSource,
-    tf: TimeFrame,
-    startMs: number,
-    endMs: number,
-    asset: string,
-    quoteAsset: string,
-    setCached?: (c: CandleData[]) => void,
-    signal?: AbortSignal
-): Promise<CandleData[]> {
-    if (!asset?.trim()) return [];
+const toDateTimeLocal = (ms: number) => {
+    const date = new Date(ms);
+    const offset = date.getTimezoneOffset() * 60_000;
+    return new Date(date.getTime() - offset).toISOString().slice(0, 16);
+};
 
-    const normalizedAsset = asset.trim().toUpperCase();
-    const normalizedQuote =
-        quoteAsset.trim().toUpperCase() || DEFAULT_QUOTE_ASSET;
-
-    const candleIntervalMs = TF_TO_MS[tf];
-    const prefetchBuffer = 200 * candleIntervalMs;
-
-    let rangeStart = Math.max(0, startMs - prefetchBuffer);
-    let rangeEnd = Math.min(Date.now(), endMs + prefetchBuffer);
-
-    if (!rangeStart || !rangeEnd || rangeEnd <= rangeStart) {
-        rangeEnd = Date.now();
-        rangeStart = rangeEnd - 30 * 24 * 60 * 60 * 1000;
-    }
-
-    const { normalizedStart, normalizedEnd } = normalizeRange(
-        rangeStart,
-        rangeEnd,
-        candleIntervalMs
-    );
-    const expectedCandles = Math.ceil(
-        (normalizedEnd - normalizedStart) / candleIntervalMs
-    );
-    const tfCache = getTimeframeCache(
-        source,
-        normalizedAsset,
-        normalizedQuote,
-        tf
-    );
-    const { cached, missing } = collectCachedCandles(
-        tfCache,
-        normalizedAsset,
-        normalizedStart,
-        normalizedEnd,
-        candleIntervalMs
-    );
-    const fullCache = cacheToArray(tfCache, normalizedAsset);
-    if (setCached) {
-        setCached(fullCache);
-    }
-
-    // Serve straight from cache when we already have full coverage
-    if (missing.length === 0 && cached.length > 0) {
-        return fullCache;
-    }
-
-    const abortError = () =>
-        typeof DOMException === "undefined"
-            ? new Error("Aborted")
-            : new DOMException("Aborted", "AbortError");
-
-    for (const segment of missing) {
-        if (signal?.aborted) throw abortError();
-        const data = await fetchCandles(
-            source,
-            normalizedAsset,
-            normalizedQuote,
-            segment.start,
-            segment.end,
-            tf,
-            signal
-        );
-
-        for (const candle of data) {
-            tfCache.set(candle.start, candle);
-        }
-    }
-
-    const merged = cacheToArray(tfCache, normalizedAsset);
-
-    return merged;
-}
-
-type KwantChartContentProps = {
+export interface KwantChartProps {
+    /** Required caller-owned HLOCV candles. Intervals use values such as 1m, 1h, and 1d. */
+    hlocv_data: CandleData[];
+    /** Displayed in place of the former exchange/market controls and used as the cache namespace. */
+    source_name?: string;
+    /** Show the source name in the chart header. Defaults to false. */
+    show_source?: boolean;
+    /** Opt in to retained, timestamp-upserted candles for the named source. Defaults to false. */
+    enable_caching?: boolean;
+    /** Optional display label; defaults to the selected candle series' asset. */
     asset?: string;
-    dataSource?: DataSource;
-    quoteAsset?: string;
     title?: string;
     width?: number | string;
     height?: number | string;
@@ -312,17 +155,24 @@ type KwantChartContentProps = {
     gridColor?: string;
     secondaryColor?: string;
     crosshairColor?: string;
-};
+    crosshairLineStyle?: CrosshairLineStyle;
+    /** Show the latest candle close as a dotted line and price-scale label. Defaults to false. */
+    live_price?: boolean;
+    /** Allow users to change runtime chart colors through the settings control. Defaults to true. */
+    configurable?: boolean;
+}
 
-const normalizeSize = (value?: number | string, fallback = "100%") => {
-    if (value === undefined) return fallback;
-    return typeof value === "number" ? `${value}px` : value;
+type KwantChartContentProps = Omit<KwantChartProps, "width" | "height"> & {
+    width?: number | string;
+    height?: number | string;
 };
 
 function KwantChartContent({
-    asset = "BTC",
-    dataSource = DEFAULT_DATA_SOURCE,
-    quoteAsset = DEFAULT_QUOTE_ASSET,
+    hlocv_data,
+    source_name,
+    show_source = false,
+    enable_caching = false,
+    asset,
     title,
     width,
     height,
@@ -330,292 +180,238 @@ function KwantChartContent({
     gridColor,
     secondaryColor,
     crosshairColor,
+    crosshairLineStyle,
+    live_price = false,
+    configurable = true,
 }: KwantChartContentProps) {
-    const { startTime, endTime, setTimeRange } = useChartContext();
-
-    const defaultStartParts = useMemo(
-        () => dateToParts(new Date(Date.now() - 7 * 24 * 60 * 60 * 1000)),
-        []
-    );
-    const defaultEndParts = useMemo(() => dateToParts(new Date()), []);
-
+    const {
+        startTime,
+        endTime,
+        setTimeRange,
+        candleColor,
+        setCandleColor,
+    } = useChartContext();
     const [timeframe, setTimeframe] = useState<TimeFrame>("hour4");
-    const [candleData, setCandleData] = useState<CandleData[]>([]);
-    const [showDatePicker, setShowDatePicker] = useState(true);
-    const [loadState, setLoadState] = useState<"idle" | "error">(
-        "idle"
-    );
-    const [loadError, setLoadError] = useState("");
-    const requestIdRef = useRef(0);
-    const abortControllerRef = useRef<AbortController | null>(null);
-    const [selectedExchange, setSelectedExchange] = useState<ExchangeId>(
-        dataSource.exchange
-    );
-    const [selectedMarket, setSelectedMarket] = useState<MarketType>(
-        dataSource.market
-    );
-
     const [rangePreset, setRangePreset] = useState<RangePreset>("30D");
-    const [customStartParts, setCustomStartParts] =
-        useState<CustomDateParts>(defaultStartParts);
-    const [customEndParts, setCustomEndParts] =
-        useState<CustomDateParts>(defaultEndParts);
-    const [committedStartParts, setCommittedStartParts] =
-        useState<CustomDateParts>(defaultStartParts);
-    const [committedEndParts, setCommittedEndParts] =
-        useState<CustomDateParts>(defaultEndParts);
-    const updateStartParts = (updates: Partial<CustomDateParts>) => {
-        setCustomStartParts((prev) => normalizeParts({ ...prev, ...updates }));
-    };
-    const updateEndParts = (updates: Partial<CustomDateParts>) => {
-        setCustomEndParts((prev) => normalizeParts({ ...prev, ...updates }));
-    };
-    const confirmCustomRange = () => {
-        const range = buildCustomRangeISO(customStartParts, customEndParts);
-        setCommittedStartParts(customStartParts);
-        setCommittedEndParts(customEndParts);
-        const startMs = new Date(range.start).getTime();
-        const endMs = new Date(range.end).getTime();
-        if (!Number.isNaN(startMs) && !Number.isNaN(endMs)) {
-            setTimeRange(startMs, endMs);
-        }
-    };
-
-    const applyPresetTimeRange = useCallback(
-        (preset: RangePreset) => {
-            const now = Date.now();
-            switch (preset) {
-                case "24H":
-                    setTimeRange(now - 24 * 60 * 60 * 1000, now);
-                    break;
-                case "7D":
-                    setTimeRange(now - 7 * 24 * 60 * 60 * 1000, now);
-                    break;
-                case "30D":
-                    setTimeRange(now - 30 * 24 * 60 * 60 * 1000, now);
-                    break;
-                case "YTD": {
-                    const current = new Date();
-                    const startOfYear = Date.UTC(
-                        current.getUTCFullYear(),
-                        0,
-                        1
-                    );
-                    setTimeRange(startOfYear, now);
-                    break;
-                }
-                default:
-                    // CUSTOM handled separately
-                    break;
-            }
-        },
-        [setTimeRange]
+    const [showDatePicker, setShowDatePicker] = useState(false);
+    const [customStart, setCustomStart] = useState("");
+    const [customEnd, setCustomEnd] = useState("");
+    const [cacheRevision, setCacheRevision] = useState(0);
+    const defaultAppearance = useMemo<ChartAppearance>(
+        () => ({
+            backgroundColor:
+                backgroundColor ?? DEFAULT_CHART_APPEARANCE.backgroundColor,
+            gridColor: gridColor ?? DEFAULT_CHART_APPEARANCE.gridColor,
+            secondaryColor:
+                secondaryColor ?? DEFAULT_CHART_APPEARANCE.secondaryColor,
+            crosshairColor:
+                crosshairColor ?? DEFAULT_CHART_APPEARANCE.crosshairColor,
+            crosshairLineStyle:
+                crosshairLineStyle ??
+                DEFAULT_CHART_APPEARANCE.crosshairLineStyle,
+        }),
+        [
+            backgroundColor,
+            crosshairColor,
+            crosshairLineStyle,
+            gridColor,
+            secondaryColor,
+        ]
     );
-
-    const handlePresetSelect = (preset: RangePreset) => {
-        if (preset === rangePreset) return;
-        setRangePreset(preset);
-
-        const tfForPreset = PRESET_DEFAULT_TF[preset];
-        if (tfForPreset) {
-            setTimeframe(tfForPreset);
-        }
-
-        if (preset !== "CUSTOM") {
-            applyPresetTimeRange(preset);
-        }
-    };
+    const [appearance, setAppearance] = useState<ChartAppearance>(
+        defaultAppearance
+    );
+    const previousTimeframe = useRef<TimeFrame | null>(null);
 
     useEffect(() => {
-        const markets = getMarketsForExchange(dataSource.exchange);
-        setSelectedExchange(dataSource.exchange);
-        setSelectedMarket(
-            markets.includes(dataSource.market)
-                ? dataSource.market
-                : markets[0] ?? DEFAULT_DATA_SOURCE.market
-        );
-    }, [dataSource.exchange, dataSource.market]);
+        setAppearance(defaultAppearance);
+    }, [defaultAppearance]);
 
-    const handleExchangeChange = (
-        event: React.ChangeEvent<HTMLSelectElement>
-    ) => {
-        const nextExchange = event.target.value as ExchangeId;
-        const supportedMarkets = getMarketsForExchange(nextExchange);
-        setSelectedExchange(nextExchange);
-        setSelectedMarket((current) =>
-            supportedMarkets.includes(current)
-                ? current
-                : supportedMarkets[0] ?? DEFAULT_DATA_SOURCE.market
-        );
-    };
-
-    const handleMarketChange = (
-        event: React.ChangeEvent<HTMLSelectElement>
-    ) => {
-        setSelectedMarket(event.target.value as MarketType);
-    };
-
-    const selectedExchangeMarkets = useMemo(
-        () => getMarketsForExchange(selectedExchange),
-        [selectedExchange]
-    );
-
-    const selectedDataSource = useMemo(
+    const normalizedSourceName = source_name?.trim() || "";
+    const sourceNameCharacters = Array.from(normalizedSourceName);
+    const sourceNameLabel =
+        sourceNameCharacters.length > 10
+            ? `${sourceNameCharacters.slice(0, 10).join("")}...`
+            : normalizedSourceName;
+    const settingsScope =
+        normalizedSourceName ||
+        asset?.trim() ||
+        hlocv_data[0]?.asset?.trim() ||
+        "default";
+    const settingsStorageKey = `${SETTINGS_STORAGE_PREFIX}${settingsScope}`;
+    const developerSettings = useMemo<ChartSettingsValue>(
         () => ({
-            exchange: selectedExchange,
-            market: selectedMarket,
+            candles: DEFAULT_CANDLE_COLORS,
+            appearance: defaultAppearance,
         }),
-        [selectedExchange, selectedMarket]
+        [defaultAppearance]
     );
+    const applySettings = useCallback(
+        (value: ChartSettingsValue) => {
+            setCandleColor(value.candles.up, value.candles.down);
+            setAppearance(value.appearance);
+        },
+        [setCandleColor]
+    );
+
+    useEffect(() => {
+        if (!configurable || typeof window === "undefined") {
+            applySettings(developerSettings);
+            return;
+        }
+
+        try {
+            const stored = window.localStorage.getItem(settingsStorageKey);
+            if (!stored) {
+                applySettings(developerSettings);
+                return;
+            }
+            const parsed: unknown = JSON.parse(stored);
+            if (isChartSettingsValue(parsed)) {
+                applySettings(parsed);
+            } else {
+                window.localStorage.removeItem(settingsStorageKey);
+                applySettings(developerSettings);
+            }
+        } catch {
+            applySettings(developerSettings);
+        }
+    }, [
+        applySettings,
+        configurable,
+        developerSettings,
+        settingsStorageKey,
+    ]);
+
+    const saveSettings = useCallback(() => {
+        if (typeof window === "undefined") return false;
+        try {
+            window.localStorage.setItem(
+                settingsStorageKey,
+                JSON.stringify({
+                    candles: candleColor,
+                    appearance,
+                } satisfies ChartSettingsValue)
+            );
+            return true;
+        } catch {
+            return false;
+        }
+    }, [appearance, candleColor, settingsStorageKey]);
+
+    const resetSettings = useCallback(() => {
+        if (typeof window !== "undefined") {
+            try {
+                window.localStorage.removeItem(settingsStorageKey);
+            } catch {
+                // Storage may be unavailable; resetting the live chart still works.
+            }
+        }
+        applySettings(developerSettings);
+    }, [applySettings, developerSettings, settingsStorageKey]);
+
+    const canUseCache = enable_caching && Boolean(normalizedSourceName);
+    const normalizedCandles = useMemo(
+        () => normalizeCandles(hlocv_data),
+        [hlocv_data]
+    );
+
+    useEffect(() => {
+        if (!canUseCache) return;
+
+        for (const [frame, candles] of normalizedCandles) {
+            const cache = getTimeframeCache(normalizedSourceName, frame);
+            for (const candle of candles) {
+                cache.set(candle.start, cloneCandle(candle));
+            }
+        }
+        setCacheRevision((revision) => revision + 1);
+    }, [canUseCache, normalizedCandles, normalizedSourceName]);
+
+    const candlesByTimeframe = useMemo(() => {
+        if (!canUseCache) return normalizedCandles;
+
+        return new Map(
+            Array.from(normalizedCandles.keys(), (frame) => [
+                frame,
+                getCachedCandles(normalizedSourceName, frame),
+            ])
+        );
+    }, [cacheRevision, canUseCache, normalizedCandles, normalizedSourceName]);
 
     const supportedTimeframes = useMemo(
-        () =>
-            TIMEFRAME_ORDER.filter((tf) =>
-                isTimeframeSupported(selectedDataSource, tf)
-            ),
-        [selectedDataSource]
+        () => TIMEFRAME_ORDER.filter((frame) => candlesByTimeframe.has(frame)),
+        [candlesByTimeframe]
     );
 
     useEffect(() => {
-        if (supportedTimeframes.length === 0) return;
-        if (supportedTimeframes.includes(timeframe)) return;
-
-        const currentMs = TF_TO_MS[timeframe];
-        let closest = supportedTimeframes[0];
-        let bestDiff = Math.abs(TF_TO_MS[closest] - currentMs);
-        for (const candidate of supportedTimeframes) {
-            const diff = Math.abs(TF_TO_MS[candidate] - currentMs);
-            if (diff < bestDiff) {
-                bestDiff = diff;
-                closest = candidate;
-            }
-        }
-        if (closest !== timeframe) {
-            setTimeframe(closest);
+        if (
+            supportedTimeframes.length > 0 &&
+            !supportedTimeframes.includes(timeframe)
+        ) {
+            setTimeframe(supportedTimeframes[0]);
         }
     }, [supportedTimeframes, timeframe]);
 
-    const startDayOptions = getDaysInMonth(
-        customStartParts.year,
-        customStartParts.month
-    );
-    const endDayOptions = getDaysInMonth(
-        customEndParts.year,
-        customEndParts.month
-    );
-    const customRows = [
-        {
-            label: "Start",
-            parts: customStartParts,
-            update: updateStartParts,
-            dayCount: startDayOptions,
-        },
-        {
-            label: "End",
-            parts: customEndParts,
-            update: updateEndParts,
-            dayCount: endDayOptions,
-        },
-    ] as const;
+    const candleData = candlesByTimeframe.get(timeframe) ?? [];
+    const assetLabel = asset?.trim() || candleData[0]?.asset || "Chart";
 
-    const isCustomDirty = useMemo(() => {
-        if (rangePreset !== "CUSTOM") return false;
-        const partsEqual = (a: CustomDateParts, b: CustomDateParts) =>
-            a.year === b.year &&
-            a.month === b.month &&
-            a.day === b.day &&
-            a.time === b.time;
+    const applyPresetTimeRange = useCallback(
+        (preset: Exclude<RangePreset, "CUSTOM">, data = candleData) => {
+            if (!data.length) return;
 
-        return (
-            !partsEqual(customStartParts, committedStartParts) ||
-            !partsEqual(customEndParts, committedEndParts)
-        );
-    }, [
-        rangePreset,
-        customStartParts,
-        committedStartParts,
-        customEndParts,
-        committedEndParts,
-    ]);
-    const applyButtonState: keyof typeof APPLY_BUTTON_CLASSES = isCustomDirty
-        ? "enabled"
-        : "disabled";
+            const { start: first, end: last } = getSeriesBounds(data);
+            let start = first;
+            if (preset === "24H") start = last - 24 * 60 * 60 * 1000;
+            if (preset === "7D") start = last - 7 * 24 * 60 * 60 * 1000;
+            if (preset === "30D") start = last - 30 * 24 * 60 * 60 * 1000;
+            if (preset === "YTD") {
+                const date = new Date(last);
+                start = Date.UTC(date.getUTCFullYear(), 0, 1);
+            }
+            setTimeRange(Math.max(first, start), last);
+        },
+        [candleData, setTimeRange]
+    );
 
     useEffect(() => {
-        if (rangePreset !== "CUSTOM") {
-            applyPresetTimeRange(rangePreset);
+        if (!candleData.length) return;
+
+        const { start: first, end: last } = getSeriesBounds(candleData);
+        const timeframeChanged = previousTimeframe.current !== timeframe;
+        const outsideData = endTime <= startTime || endTime < first || startTime > last;
+        if (rangePreset !== "CUSTOM" && (timeframeChanged || outsideData)) {
+            applyPresetTimeRange(rangePreset, candleData);
         }
-    }, [applyPresetTimeRange, rangePreset]);
-
-    useEffect(() => {
-        if (!asset) return;
-        if (startTime <= 0 || endTime <= startTime) return;
-
-        abortControllerRef.current?.abort();
-        const controller = new AbortController();
-        abortControllerRef.current = controller;
-        const requestId = ++requestIdRef.current;
-        const isStale = () =>
-            requestId !== requestIdRef.current || controller.signal.aborted;
-
-        setLoadError("");
-        setLoadState("idle");
-
-        const timer = setTimeout(() => {
-            (async () => {
-                try {
-                    const data = await loadCandles(
-                        selectedDataSource,
-                        timeframe,
-                        startTime,
-                        endTime,
-                        asset,
-                        quoteAsset,
-                        (cached) => {
-                            if (!isStale()) {
-                                setCandleData(cached);
-                            }
-                        },
-                        controller.signal
-                    );
-                    if (isStale()) return;
-                    setCandleData(data);
-                    setLoadState("idle");
-                } catch (error) {
-                    if (isStale()) return;
-                    const isAbortError =
-                        (typeof DOMException !== "undefined" &&
-                            error instanceof DOMException &&
-                            error.name === "AbortError") ||
-                        (error instanceof Error &&
-                            error.name === "AbortError");
-                    if (isAbortError) return;
-                    const message =
-                        error instanceof Error && error.message
-                            ? error.message
-                            : "Failed to load data";
-                    setLoadError(
-                        message.length > 80
-                            ? `${message.slice(0, 77)}...`
-                            : message
-                    );
-                    setLoadState("error");
-                }
-            })();
-        }, 200);
-
-        return () => {
-            clearTimeout(timer);
-            controller.abort();
-        };
+        previousTimeframe.current = timeframe;
     }, [
-        startTime,
+        applyPresetTimeRange,
+        candleData,
         endTime,
+        rangePreset,
+        startTime,
         timeframe,
-        asset,
-        quoteAsset,
-        selectedDataSource,
     ]);
+
+    const selectPreset = (preset: RangePreset) => {
+        setRangePreset(preset);
+        setShowDatePicker(preset === "CUSTOM");
+        if (preset !== "CUSTOM") applyPresetTimeRange(preset);
+        if (preset === "CUSTOM" && candleData.length) {
+            const { start, end } = getSeriesBounds(candleData);
+            setCustomStart(toDateTimeLocal(start));
+            setCustomEnd(toDateTimeLocal(end));
+        }
+    };
+
+    const applyCustomRange = () => {
+        const start = new Date(customStart).getTime();
+        const end = new Date(customEnd).getTime();
+        if (Number.isFinite(start) && Number.isFinite(end) && end > start) {
+            setTimeRange(start, end);
+            setShowDatePicker(false);
+        }
+    };
 
     const containerStyle = {
         width: normalizeSize(width),
@@ -623,296 +419,175 @@ function KwantChartContent({
         maxWidth: "100%",
         maxHeight: "100%",
         minHeight: height === undefined ? "70vh" : undefined,
-        ...(backgroundColor
-            ? {
-                  ["--kwant-chart-container-bg" as string]: backgroundColor,
-              }
-            : {}),
-        ...(gridColor
-            ? { ["--kwant-grid-color" as string]: gridColor }
-            : {}),
-        ...(secondaryColor
-            ? {
-                  ["--kwant-secondary" as string]: secondaryColor,
-                  ["--kwant-secondary-text" as string]: secondaryColor,
-                  ["--kwant-secondary-soft" as string]: `color-mix(in srgb, ${secondaryColor} 20%, transparent)`,
-              }
-            : {}),
-        ...(crosshairColor
-            ? { ["--kwant-crosshair-color" as string]: crosshairColor }
-            : {}),
+        ["--kwant-chart-container-bg" as string]: appearance.backgroundColor,
+        ["--kwant-grid-color" as string]: appearance.gridColor,
+        ["--kwant-secondary" as string]: appearance.secondaryColor,
+        ["--kwant-secondary-text" as string]: appearance.secondaryColor,
+        ["--kwant-secondary-soft" as string]: `color-mix(in srgb, ${appearance.secondaryColor} 20%, transparent)`,
+        ["--kwant-crosshair-color" as string]: appearance.crosshairColor,
+        ["--kwant-crosshair-dash" as string]:
+            appearance.crosshairLineStyle === "solid"
+                ? "none"
+                : appearance.crosshairLineStyle === "dotted"
+                  ? "1 4"
+                  : "6 4",
     };
-    const baseTitle = title || "Kwant Chart";
-    const titleLabel =
-        loadState === "error" ? `DATA ERROR` : baseTitle;
-    const titleToneClass =
-        loadState === "error" ? "text-red-400" : "kwant-secondary-text";
-    const titleTooltip = loadState === "error" ? loadError : undefined;
 
     return (
         <div className="kwant-chart" style={containerStyle}>
             <div
                 className="mb-30 flex h-full w-full flex-grow flex-col rounded-lg px-3 py-3 tracking-widest"
-                style={{ backgroundColor: "var(--kwant-chart-container-bg, rgba(255,255,255,0.1))",
+                style={{
+                    backgroundColor:
+                        "var(--kwant-chart-container-bg, rgba(255,255,255,0.1))",
                 }}
             >
-                <div className="flex items-center justify-between border-b border-white/10 px-4 py-3">
-                    <div className="flex items-center gap-3">
-                        <div
-                            aria-live="polite"
-                            title={titleTooltip}
-                            className={`rounded bg-white/10 px-3 py-1 text-xs uppercase tracking-[0.2em] ${titleToneClass}`}
-                        >
-                            {titleLabel}
+                <div className="kwant-chart-header flex items-center justify-between border-b border-white/10 px-4 py-3">
+                    <div className="kwant-chart-heading flex items-center gap-3">
+                        <div className="kwant-secondary-text rounded bg-white/10 px-3 py-1 text-xs uppercase tracking-[0.2em]">
+                            {title || "Kwant Chart"}
                         </div>
                         <h2 className="kwant-secondary-text text-xl font-semibold tracking-wide">
-                            {asset}
+                            {assetLabel}
                         </h2>
                     </div>
-                    <div className="flex flex-wrap items-center gap-2">
-                        <div className="flex items-center gap-2 rounded border border-white/30 bg-black/70 text-xs uppercase tracking-[0.2em] text-white/70">
-                            <select
-                                aria-label="Exchange"
-                                value={selectedExchange}
-                                onChange={handleExchangeChange}
-                                className="rounded border border-black/30 bg-black/70 p-1 text-xs uppercase tracking-[0.2em] text-white"
+                    <div className="kwant-header-controls flex items-center gap-2">
+                        {show_source && normalizedSourceName && (
+                            <span
+                                className="rounded border border-white/30 bg-black/70 px-2 py-1 text-xs tracking-wide text-white/70"
+                                title={normalizedSourceName}
                             >
-                                {EXCHANGE_OPTIONS.map((option) => (
-                                    <option key={option.value} value={option.value}>
-                                        {option.label}
-                                    </option>
-                                ))}
-                            </select>
-                            <select
-                                aria-label="Market"
-                                value={selectedMarket}
-                                onChange={handleMarketChange}
-                                className="rounded border border-black/30 bg-black/70 p-1 text-xs uppercase tracking-[0.2em] text-white"
-                            >
-                                {MARKET_OPTIONS.map((option) => (
-                                    <option
-                                        key={option.value}
-                                        value={option.value}
-                                        disabled={
-                                            !selectedExchangeMarkets.includes(
-                                                option.value
-                                            )
-                                        }
-                                    >
-                                        {option.label}
-                                    </option>
-                                ))}
-                            </select>
-                        </div>
-                        {RANGE_PRESETS.map((preset) => {
-                            const presetState: keyof typeof RANGE_PRESET_BUTTON_CLASSES =
-                                rangePreset === preset.id ? "active" : "inactive";
-                            return (
+                                {sourceNameLabel}
+                            </span>
+                        )}
+                        <div className="kwant-duration-presets">
+                            {RANGE_PRESETS.map((preset) => (
                                 <button
                                     key={preset.id}
-                                    className={RANGE_PRESET_BUTTON_CLASSES[presetState]}
-                                    onClick={() => {
-                                        handlePresetSelect(preset.id);
-                                        setShowDatePicker(true);
-                                    }}
+                                    type="button"
+                                    className={`kwant-duration-button ${
+                                        RANGE_PRESET_BUTTON_CLASSES[
+                                            rangePreset === preset.id
+                                                ? "active"
+                                                : "inactive"
+                                        ]
+                                    }`}
+                                    onClick={() => selectPreset(preset.id)}
                                 >
                                     {preset.label}
                                 </button>
-                            );
-                        })}
+                            ))}
+                        </div>
                     </div>
                 </div>
 
                 {rangePreset === "CUSTOM" && showDatePicker && (
-                    <div className="flex flex-wrap gap-4 border-b border-white/10 bg-black/50 px-4 py-3 text-sm text-white">
-                        {customRows.map((item) => (
-                            <div
-                                key={item.label}
-                                className="flex flex-wrap items-center gap-2"
-                            >
-                                <span className="w-14 text-xs tracking-wide text-white/60 uppercase">
-                                    {item.label}
-                                </span>
-                                <select
-                                    value={item.parts.year}
-                                    onChange={(e) =>
-                                        item.update({
-                                            year: Number(e.target.value),
-                                        })
-                                    }
-                                    className="rounded border border-white/30 bg-black/70 p-1"
-                                >
-                                    {YEARS.map((year) => (
-                                        <option key={year} value={year}>
-                                            {year}
-                                        </option>
-                                    ))}
-                                </select>
-                                <select
-                                    value={item.parts.month}
-                                    onChange={(e) =>
-                                        item.update({
-                                            month: Number(e.target.value),
-                                        })
-                                    }
-                                    className="rounded border border-white/30 bg-black/70 p-1"
-                                >
-                                    {MONTHS.map((month) => (
-                                        <option
-                                            key={month.value}
-                                            value={month.value}
-                                        >
-                                            {month.label}
-                                        </option>
-                                    ))}
-                                </select>
-                                <select
-                                    value={item.parts.day}
-                                    onChange={(e) =>
-                                        item.update({
-                                            day: Number(e.target.value),
-                                        })
-                                    }
-                                    className="rounded border border-white/30 bg-black/70 p-1"
-                                >
-                                    {Array.from(
-                                        { length: item.dayCount },
-                                        (_, idx) => idx + 1
-                                    ).map((day) => (
-                                        <option key={day} value={day}>
-                                            {day}
-                                        </option>
-                                    ))}
-                                </select>
-                                <input
-                                    type="time"
-                                    value={item.parts.time}
-                                    onChange={(e) =>
-                                        item.update({ time: e.target.value })
-                                    }
-                                    className="w-[115px] rounded border border-white/30 bg-gray-600/70 p-1"
-                                />
-                                <span className="text-xs text-white/50">
-                                    UTC
-                                </span>
-                            </div>
-                        ))}
-
+                    <div className="flex flex-wrap items-end gap-3 border-b border-white/10 bg-black/50 px-4 py-3 text-sm text-white">
+                        <label className="flex flex-col gap-1 text-xs text-white/60">
+                            Start
+                            <input
+                                type="datetime-local"
+                                value={customStart}
+                                onChange={(event) => setCustomStart(event.target.value)}
+                                className="rounded border border-white/30 bg-black/70 p-1 text-white"
+                            />
+                        </label>
+                        <label className="flex flex-col gap-1 text-xs text-white/60">
+                            End
+                            <input
+                                type="datetime-local"
+                                value={customEnd}
+                                onChange={(event) => setCustomEnd(event.target.value)}
+                                className="rounded border border-white/30 bg-black/70 p-1 text-white"
+                            />
+                        </label>
                         <button
-                            onClick={() => {
-                                confirmCustomRange();
-                                setShowDatePicker(false);
-                            }}
-                            disabled={!isCustomDirty}
-                            className={APPLY_BUTTON_CLASSES[applyButtonState]}
+                            type="button"
+                            onClick={applyCustomRange}
+                            className="kwant-secondary-border kwant-secondary-text kwant-secondary-hover rounded border px-3 py-1 text-xs font-semibold transition"
                         >
                             Apply
                         </button>
                     </div>
                 )}
 
-            <div className="flex flex-1 flex-col px-3 py-3">
-                <div className="z-5 grid w-full grid-cols-13 bg-black/70 text-center tracking-normal">
-                    {Object.entries(TIMEFRAME_CAMELCASE).map(([short, tf]) => {
-                        const isSupported = supportedTimeframes.includes(tf);
-                        const labelState: keyof typeof TIMEFRAME_LABEL_CLASSES =
-                            !isSupported
+                <div className="flex flex-1 flex-col px-3 py-3">
+                    <div className="kwant-timeframe-bar z-5 bg-black/70 text-center tracking-normal">
+                        {Object.entries(TIMEFRAME_CAMELCASE).map(([short, frame]) => {
+                            const supported = supportedTimeframes.includes(frame);
+                            const state = !supported
                                 ? "disabled"
-                                : timeframe === tf
+                                : timeframe === frame
                                   ? "active"
                                   : "inactive";
-                        const cellClasses = isSupported
-                            ? "cursor-pointer py-2 hover:bg-black"
-                            : "cursor-not-allowed py-2 text-white/30";
-                        return (
-                            <div
-                                className={cellClasses}
-                                key={short}
-                                aria-disabled={!isSupported}
-                                title={
-                                    isSupported
-                                        ? undefined
-                                        : "Not supported by selected source"
-                                }
-                                onClick={() => {
-                                    if (isSupported) {
-                                        setTimeframe(tf);
+                            return (
+                                <button
+                                    key={short}
+                                    type="button"
+                                    disabled={!supported}
+                                    title={
+                                        supported
+                                            ? undefined
+                                            : "Not present in supplied data"
                                     }
-                                }}
-                            >
-                                <span
-                                    className={TIMEFRAME_LABEL_CLASSES[labelState]}
+                                    className={
+                                        supported
+                                            ? "kwant-timeframe-button cursor-pointer hover:bg-black"
+                                            : "kwant-timeframe-button cursor-not-allowed"
+                                    }
+                                    onClick={() => setTimeframe(frame)}
                                 >
-                                    {short}
-                                </span>
-                            </div>
-                        );
-                    })}
-                </div>
+                                    <span
+                                        className={`kwant-timeframe-label ${TIMEFRAME_LABEL_CLASSES[state]}`}
+                                    >
+                                        {short}
+                                    </span>
+                                </button>
+                            );
+                        })}
+                    </div>
 
-                <div
-                    className="flex-1 border-black/30 overflow-hidden z-1"
-                    style={{
-                        backgroundColor:
-                            "var(--kwant-grid-color, #111212)",
-                    }}
-                >
-                    <ChartContainer
-                        asset={asset}
-                        tf={timeframe}
-                        settingInterval={false}
-                        candleData={candleData}
-                    />
+                    <div
+                        className="z-1 flex-1 overflow-hidden border-black/30"
+                        style={{
+                            backgroundColor: "var(--kwant-grid-color, #111212)",
+                        }}
+                    >
+                        <ChartContainer
+                            asset={assetLabel}
+                            tf={timeframe}
+                            settingInterval={false}
+                            candleData={candleData}
+                            livePrice={live_price}
+                            configurable={configurable}
+                            settingsValue={{
+                                candles: candleColor,
+                                appearance,
+                            }}
+                            defaultSettingsValue={{
+                                candles: DEFAULT_CANDLE_COLORS,
+                                appearance: defaultAppearance,
+                            }}
+                            onApplySettings={applySettings}
+                            onResetSettings={resetSettings}
+                            onSaveSettings={saveSettings}
+                        />
+                    </div>
                 </div>
             </div>
-            </div>
+
         </div>
     );
 }
 
-type KwantChartProps = {
-    asset?: string;
-    dataSource?: DataSource;
-    quoteAsset?: string;
-    title?: string;
-    width?: number | string;
-    height?: number | string;
-    backgroundColor?: string;
-    gridColor?: string;
-    secondaryColor?: string;
-    crosshairColor?: string;
-};
-
-export default function KwantChart({
-    asset,
-    dataSource,
-    quoteAsset,
-    title,
-    width,
-    height,
-    backgroundColor,
-    gridColor,
-    secondaryColor,
-    crosshairColor,
-}: KwantChartProps) {
-    const containerWidth = normalizeSize(width, "100%");
-    const containerHeight = normalizeSize(height, "70vh");
+export default function KwantChart(props: KwantChartProps) {
+    const containerWidth = normalizeSize(props.width, "100%");
+    const containerHeight = normalizeSize(props.height, "70vh");
 
     return (
         <div style={{ width: containerWidth, height: containerHeight }}>
             <ChartProvider>
-                <KwantChartContent
-                    asset={asset}
-                    dataSource={dataSource}
-                    quoteAsset={quoteAsset}
-                    title={title}
-                    width="100%"
-                    height="100%"
-                    backgroundColor={backgroundColor}
-                    gridColor={gridColor}
-                    secondaryColor={secondaryColor}
-                    crosshairColor={crosshairColor}
-                />
+                <KwantChartContent {...props} width="100%" height="100%" />
             </ChartProvider>
         </div>
     );

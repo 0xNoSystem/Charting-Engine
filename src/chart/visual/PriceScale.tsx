@@ -8,7 +8,14 @@ import {
     computePricePan,
 } from "../utils";
 
-const MAX_DECIMALS = 10;
+const MAX_DECIMALS = 16;
+const MIN_RELATIVE_PRICE_RANGE = 1e-8;
+const COMPACT_PRICE_SUFFIXES = [
+    { threshold: 1e15, suffix: "Q" },
+    { threshold: 1e12, suffix: "T" },
+    { threshold: 1e9, suffix: "B" },
+] as const;
+const SCIENTIFIC_PRICE_THRESHOLD = 1e18;
 
 const clampDecimals = (value: number) =>
     Math.min(MAX_DECIMALS, Math.max(0, Math.round(value)));
@@ -20,6 +27,38 @@ const formatFixedPrice = (value: number, decimals: number) => {
         minimumFractionDigits: safeDecimals,
         maximumFractionDigits: safeDecimals,
     });
+};
+
+const formatCompactPrice = (value: number, decimals: number) => {
+    if (!Number.isFinite(value)) return "—";
+
+    const absolute = Math.abs(value);
+    if (absolute >= SCIENTIFIC_PRICE_THRESHOLD) {
+        return value.toExponential(Math.min(3, clampDecimals(decimals)));
+    }
+
+    const compact = COMPACT_PRICE_SUFFIXES.find(
+        ({ threshold }) => absolute >= threshold
+    );
+    if (!compact) return formatFixedPrice(value, decimals);
+
+    const scaled = value / compact.threshold;
+    const compactDecimals =
+        Math.abs(scaled) >= 100 ? 0 : Math.abs(scaled) >= 10 ? 1 : 2;
+    return `${scaled.toLocaleString("en-US", {
+        minimumFractionDigits: 0,
+        maximumFractionDigits: compactDecimals,
+    })}${compact.suffix}`;
+};
+
+const roundToStep = (value: number, step: number) => {
+    if (!Number.isFinite(value) || !Number.isFinite(step) || step <= 0) {
+        return value;
+    }
+    const quotient = value / step;
+    if (!Number.isFinite(quotient)) return value;
+    const rounded = Math.round(quotient) * step;
+    return Number.isFinite(rounded) ? rounded : value;
 };
 
 const inferAssetDecimals = (price: number) => {
@@ -43,7 +82,22 @@ const niceStep = (rawStep: number) => {
     return 10 * base;
 };
 
-const PriceScale: React.FC = () => {
+const getContrastTextColor = (color: string) => {
+    const match = color.trim().match(/^#([\da-f]{6})$/i);
+    if (!match) return "#ffffff";
+    const value = match[1];
+    const red = Number.parseInt(value.slice(0, 2), 16);
+    const green = Number.parseInt(value.slice(2, 4), 16);
+    const blue = Number.parseInt(value.slice(4, 6), 16);
+    const luminance = (red * 299 + green * 587 + blue * 114) / 1000;
+    return luminance > 160 ? "#111111" : "#ffffff";
+};
+
+interface PriceScaleProps {
+    livePrice: boolean;
+}
+
+const PriceScale: React.FC<PriceScaleProps> = ({ livePrice }) => {
     const {
         height,
         minPrice,
@@ -55,6 +109,7 @@ const PriceScale: React.FC = () => {
         crosshairY,
         mouseOnChart,
         selectingInterval,
+        candleColor,
     } = useChartContext();
 
     const svgRef = useRef<SVGSVGElement>(null);
@@ -112,6 +167,27 @@ const PriceScale: React.FC = () => {
         return 0;
     }, [candles, minPrice, maxPrice]);
 
+    const minPriceRange = useMemo(() => {
+        let magnitude = 0;
+        for (const candle of candles) {
+            magnitude = Math.max(
+                magnitude,
+                Math.abs(candle.open),
+                Math.abs(candle.high),
+                Math.abs(candle.low),
+                Math.abs(candle.close)
+            );
+        }
+
+        // This is deliberately tied to the supplied series, not a currency
+        // unit: a 0.000000001 asset can zoom far below a cent, while a 1T
+        // asset stops before floating-point noise becomes useful UI detail.
+        return Math.max(
+            magnitude * MIN_RELATIVE_PRICE_RANGE,
+            Number.MIN_VALUE
+        );
+    }, [candles]);
+
     const assetKey = candles[0]?.asset ?? "unknown";
     const candidateDecimals = clampDecimals(inferAssetDecimals(referencePrice));
     let assetDecimals = candidateDecimals;
@@ -134,14 +210,14 @@ const PriceScale: React.FC = () => {
 
     const formatAxisPrice = (value: number) => {
         if (!Number.isFinite(value)) return "—";
-        if (step <= 0) return formatFixedPrice(value, assetDecimals);
-        const rounded = Math.round(value / step) * step;
+        if (step <= 0) return formatCompactPrice(value, assetDecimals);
+        const rounded = roundToStep(value, step);
         const safeValue = Math.abs(rounded) < step / 2 ? 0 : rounded;
-        return formatFixedPrice(safeValue, assetDecimals);
+        return formatCompactPrice(safeValue, assetDecimals);
     };
     const formatCrosshairPrice = (value: number) => {
         if (!Number.isFinite(value)) return "—";
-        return formatFixedPrice(value, assetDecimals);
+        return formatCompactPrice(value, assetDecimals);
     };
 
     const prices: { price: number; y: number; major: boolean }[] = [];
@@ -174,6 +250,20 @@ const PriceScale: React.FC = () => {
             ? yToPrice(crosshairY, minPrice, maxPrice, height)
             : null;
     const crosshairYValue = crosshairY ?? 0;
+    const latestCandle = candles[candles.length - 1];
+    const latestPrice =
+        latestCandle && Number.isFinite(latestCandle.close)
+            ? latestCandle.close
+            : null;
+    const latestPriceY =
+        latestPrice !== null && height > 0 && maxPrice > minPrice
+            ? priceToY(latestPrice, minPrice, maxPrice, height)
+            : null;
+    const latestPriceColor =
+        latestCandle && latestCandle.close >= latestCandle.open
+            ? candleColor.up
+            : candleColor.down;
+    const latestPriceTextColor = getContrastTextColor(latestPriceColor);
 
     const onTouchStart = (e: React.TouchEvent) => {
         if (e.touches.length === 1) {
@@ -208,7 +298,8 @@ const PriceScale: React.FC = () => {
             const { min, max } = zoomPriceRange(
                 state.initialMin,
                 state.initialMax,
-                dy
+                dy,
+                minPriceRange
             );
             setManualPriceRange(true);
             setPriceRange(min, max);
@@ -226,7 +317,10 @@ const PriceScale: React.FC = () => {
             if (initialRange <= 0) return;
 
             const scale = state.startDistance / Math.max(1, distance);
-            const newRange = Math.max(0.000001, initialRange * scale);
+            const newRange = Math.max(
+                minPriceRange,
+                initialRange * scale
+            );
             const center = (state.initialMin + state.initialMax) / 2;
             const min = center - newRange / 2;
             const max = center + newRange / 2;
@@ -267,7 +361,12 @@ const PriceScale: React.FC = () => {
             return;
         }
 
-        const { min, max } = handleWheelZoom(minPrice, maxPrice, e.deltaY);
+        const { min, max } = handleWheelZoom(
+            minPrice,
+            maxPrice,
+            e.deltaY,
+            minPriceRange
+        );
 
         setManualPriceRange(true);
         setPriceRange(min, max);
@@ -309,7 +408,12 @@ const PriceScale: React.FC = () => {
                     const { min, max } =
                         dragModeRef.current === "pan"
                             ? computePricePan(startMin, startMax, dy, height)
-                            : zoomPriceRange(startMin, startMax, dy);
+                            : zoomPriceRange(
+                                  startMin,
+                                  startMax,
+                                  dy,
+                                  minPriceRange
+                              );
                     setManualPriceRange(true);
                     setPriceRange(min, max);
                 };
@@ -350,6 +454,34 @@ const PriceScale: React.FC = () => {
                     )}
                 </g>
             ))}
+
+            {livePrice &&
+                latestPrice !== null &&
+                latestPriceY !== null &&
+                latestPriceY >= 0 &&
+                latestPriceY <= height && (
+                    <>
+                        <rect
+                            x={crosshairX}
+                            y={Math.round(latestPriceY) + 0.5 - 9}
+                            width={crosshairWidth}
+                            height={18}
+                            fill={latestPriceColor}
+                            rx={4}
+                        />
+                        <text
+                            x={labelX}
+                            y={Math.round(latestPriceY) + 0.5}
+                            textAnchor="middle"
+                            alignmentBaseline="middle"
+                            fill={latestPriceTextColor}
+                            fontSize={fontSize + 1}
+                            fontWeight="bold"
+                        >
+                            {formatCrosshairPrice(latestPrice)}
+                        </text>
+                    </>
+                )}
 
             {/* --- Crosshair Price Label --- */}
             {crosshairY !== null &&

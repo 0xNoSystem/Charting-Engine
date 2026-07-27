@@ -1,21 +1,6 @@
-import type { CandleData, HyperliquidCandle } from "../types";
+import type { CandleData } from "../types";
 
 export type { CandleData } from "../types";
-
-function parseCandle(raw: HyperliquidCandle): CandleData {
-    return {
-        open: parseFloat(raw.o),
-        high: parseFloat(raw.h),
-        low: parseFloat(raw.l),
-        close: parseFloat(raw.c),
-        start: raw.t,
-        end: raw.T,
-        volume: parseFloat(raw.v),
-        trades: raw.n,
-        asset: raw.s,
-        interval: raw.i,
-    };
-}
 
 export function priceToY(
     price: number,
@@ -79,7 +64,8 @@ export function formatUTC(ms: number): string {
 export function zoomPriceRange(
     initialMin: number,
     initialMax: number,
-    totalDy: number
+    totalDy: number,
+    minRange = Number.MIN_VALUE
 ) {
     const initialRange = initialMax - initialMin;
     const center = initialMin + initialRange / 2;
@@ -88,7 +74,7 @@ export function zoomPriceRange(
     const speed = 0.002;
     const factor = Math.max(0.1, 1 + totalDy * speed);
 
-    const newRange = initialRange * factor;
+    const newRange = Math.max(minRange, initialRange * factor);
 
     return {
         min: center - newRange / 2,
@@ -117,7 +103,8 @@ export function attachVerticalDrag(
 export function handleWheelZoom(
     minPrice: number,
     maxPrice: number,
-    deltaY: number
+    deltaY: number,
+    minRange = Number.MIN_VALUE
 ) {
     const range = maxPrice - minPrice;
     const center = (minPrice + maxPrice) / 2;
@@ -125,7 +112,7 @@ export function handleWheelZoom(
     const speed = 0.001;
     const factor = 1 + deltaY * speed;
 
-    const newRange = Math.max(0.000001, range * factor);
+    const newRange = Math.max(minRange, range * factor);
 
     return {
         min: center - newRange / 2,
