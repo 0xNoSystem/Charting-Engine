@@ -230,8 +230,8 @@ function KwantChartContent({
     const normalizedSourceName = source_name?.trim() || "";
     const sourceNameCharacters = Array.from(normalizedSourceName);
     const sourceNameLabel =
-        sourceNameCharacters.length > 10
-            ? `${sourceNameCharacters.slice(0, 10).join("")}...`
+        sourceNameCharacters.length > 20
+            ? `${sourceNameCharacters.slice(0, 20).join("")}...`
             : normalizedSourceName;
     const settingsScope =
         normalizedSourceName ||
