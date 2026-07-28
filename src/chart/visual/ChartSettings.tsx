@@ -413,7 +413,7 @@ const ChartSettings: React.FC<ChartSettingsProps> = ({
         },
         {
             field: "background",
-            label: "Background",
+            label: "Container",
             value: initialValue.appearance.backgroundColor,
             defaultValue: defaultValue.appearance.backgroundColor,
             allowAlpha: true,

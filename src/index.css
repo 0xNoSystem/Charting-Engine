@@ -1,4 +1,15 @@
+.kwant-chart-frame {
+  width: 100%;
+  height: var(--kwant-chart-frame-height, 70vh);
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+}
+
 .kwant-chart {
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
   line-height: 1.5;
   font-family: ui-sans-serif, system-ui, sans-serif, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol", "Noto Color Emoji";
   --kwant-chart-container-bg: rgba(255, 255, 255, 0.1);
@@ -8,6 +19,29 @@
   --kwant-secondary-soft: rgba(249, 115, 22, 0.2);
   --kwant-crosshair-color: #ffffff;
   --kwant-crosshair-dash: 6 4;
+}
+
+.kwant-chart .kwant-chart-shell,
+.kwant-chart .kwant-chart-content,
+.kwant-chart .kwant-chart-plot,
+.kwant-chart .kwant-chart-container,
+.kwant-chart .kwant-chart-main-row,
+.kwant-chart .kwant-chart-pane,
+.kwant-chart .kwant-chart-canvas-host,
+.kwant-chart .kwant-chart-interactive {
+  min-width: 0;
+  min-height: 0;
+}
+
+.kwant-chart .kwant-chart-shell,
+.kwant-chart .kwant-chart-content,
+.kwant-chart .kwant-chart-plot,
+.kwant-chart .kwant-chart-container,
+.kwant-chart .kwant-chart-main-row,
+.kwant-chart .kwant-chart-pane,
+.kwant-chart .kwant-chart-canvas-host,
+.kwant-chart .kwant-chart-interactive {
+  overflow: hidden;
 }
 
 .kwant-chart *,
@@ -146,6 +180,13 @@
 }
 
 @media (max-width: 640px) {
+  .kwant-chart-frame {
+    height: auto;
+    min-height: 300px;
+    max-height: min(430px, 90svh);
+    aspect-ratio: 3 / 2;
+  }
+
   .kwant-chart .kwant-chart-header {
     flex-direction: column;
     align-items: stretch;

@@ -117,12 +117,12 @@ const ChartContainer: React.FC<ChartContainerProps> = ({
     }, [configurable]);
 
     return (
-        <div className="relative flex h-full flex-1 flex-col overflow-hidden">
+        <div className="kwant-chart-container relative flex h-full flex-1 flex-col overflow-hidden">
             {/* MAIN ROW */}
-            <div className="flex h-full w-full flex-1">
+            <div className="kwant-chart-main-row flex w-full flex-1">
                 {/* LEFT: CHART */}
-                <div className="relative z-10 flex w-[93%] flex-1 overflow-hidden">
-                    <div className="relative flex flex-1">
+                <div className="kwant-chart-pane relative z-10 flex w-[93%] flex-1 overflow-hidden">
+                    <div className="kwant-chart-canvas-host relative flex flex-1">
                         <Chart
                             asset={asset}
                             tf={tf}

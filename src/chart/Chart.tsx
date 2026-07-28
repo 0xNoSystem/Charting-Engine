@@ -936,7 +936,7 @@ const Chart: React.FC<ChartProps> = ({
     return (
         <div
             ref={containerRef}
-            className="relative flex-1 cursor-crosshair"
+            className="kwant-chart-interactive relative flex-1 cursor-crosshair"
             style={{ touchAction: "none", overscrollBehavior: "contain" }}
             onWheel={onWheel}
             onMouseDown={onMouseDown}

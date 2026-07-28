@@ -436,7 +436,7 @@ function KwantChartContent({
     return (
         <div className="kwant-chart" style={containerStyle}>
             <div
-                className="mb-30 flex h-full w-full flex-grow flex-col rounded-lg px-3 py-3 tracking-widest"
+                className="kwant-chart-shell mb-30 flex h-full w-full flex-grow flex-col rounded-lg px-3 py-3 tracking-widest"
                 style={{
                     backgroundColor:
                         "var(--kwant-chart-container-bg, rgba(255,255,255,0.1))",
@@ -511,7 +511,7 @@ function KwantChartContent({
                     </div>
                 )}
 
-                <div className="flex flex-1 flex-col px-3 py-3">
+                <div className="kwant-chart-content flex flex-1 flex-col px-3 py-3">
                     <div className="kwant-timeframe-bar z-5 bg-black/70 text-center tracking-normal">
                         {Object.entries(TIMEFRAME_CAMELCASE).map(([short, frame]) => {
                             const supported = supportedTimeframes.includes(frame);
@@ -548,7 +548,7 @@ function KwantChartContent({
                     </div>
 
                     <div
-                        className="z-1 flex-1 overflow-hidden border-black/30"
+                        className="kwant-chart-plot z-1 flex-1 overflow-hidden border-black/30"
                         style={{
                             backgroundColor: "var(--kwant-grid-color, #111212)",
                         }}
@@ -583,9 +583,13 @@ function KwantChartContent({
 export default function KwantChart(props: KwantChartProps) {
     const containerWidth = normalizeSize(props.width, "100%");
     const containerHeight = normalizeSize(props.height, "70vh");
+    const frameStyle = {
+        width: containerWidth,
+        ["--kwant-chart-frame-height" as string]: containerHeight,
+    };
 
     return (
-        <div style={{ width: containerWidth, height: containerHeight }}>
+        <div className="kwant-chart-frame" style={frameStyle}>
             <ChartProvider>
                 <KwantChartContent {...props} width="100%" height="100%" />
             </ChartProvider>
