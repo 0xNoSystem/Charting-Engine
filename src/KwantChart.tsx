@@ -29,6 +29,7 @@ const TIMEFRAME_BY_INTERVAL = new Map<string, TimeFrame>(
         timeframe,
     ])
 );
+const EMPTY_CANDLES: CandleData[] = [];
 const SETTINGS_STORAGE_PREFIX = "kwant-chart:settings:";
 
 const RANGE_PRESET_BUTTON_CLASSES = {
@@ -353,7 +354,8 @@ function KwantChartContent({
         }
     }, [supportedTimeframes, timeframe]);
 
-    const candleData = candlesByTimeframe.get(timeframe) ?? [];
+    const candleData =
+        candlesByTimeframe.get(timeframe) ?? EMPTY_CANDLES;
     const assetLabel = asset?.trim() || candleData[0]?.asset || "Chart";
 
     const applyPresetTimeRange = useCallback(
