@@ -13,6 +13,8 @@ import { xToTime } from "./utils";
 import type { TimeFrame } from "../types";
 import type { CandleData } from "./utils";
 
+type SettingsHeightMode = "normal" | "compact" | "focused";
+
 interface ChartContainerProps {
     asset: string;
     tf: TimeFrame;
@@ -50,10 +52,13 @@ const ChartContainer: React.FC<ChartContainerProps> = ({
         crosshairX,
         mouseOnChart,
     } = useChartContext();
+    const paneRef = useRef<HTMLDivElement>(null);
     const rightRef = useRef<HTMLDivElement>(null);
     const [rightWidth, setRightWidth] = useState(0);
     const [hoveredCandle, setHoveredCandle] = useState<CandleData | null>(null);
     const [setting, setSetting] = useState(false);
+    const [settingsHeightMode, setSettingsHeightMode] =
+        useState<SettingsHeightMode>("normal");
 
     // Load candle data into context
     useEffect(() => {
@@ -71,6 +76,30 @@ const ChartContainer: React.FC<ChartContainerProps> = ({
 
         obs.observe(rightRef.current);
         return () => obs.disconnect();
+    }, []);
+
+    useEffect(() => {
+        const pane = paneRef.current;
+        if (!pane) return;
+
+        const updateMode = (height: number) => {
+            const nextMode: SettingsHeightMode =
+                height < 330
+                    ? "focused"
+                    : height < 440
+                      ? "compact"
+                      : "normal";
+            setSettingsHeightMode((current) =>
+                current === nextMode ? current : nextMode
+            );
+        };
+        const observer = new ResizeObserver(([entry]) => {
+            updateMode(entry.contentRect.height);
+        });
+
+        updateMode(pane.getBoundingClientRect().height);
+        observer.observe(pane);
+        return () => observer.disconnect();
     }, []);
 
     useEffect(() => {
@@ -121,7 +150,10 @@ const ChartContainer: React.FC<ChartContainerProps> = ({
             {/* MAIN ROW */}
             <div className="kwant-chart-main-row flex w-full flex-1">
                 {/* LEFT: CHART */}
-                <div className="kwant-chart-pane relative z-10 flex w-[93%] flex-1 overflow-hidden">
+                <div
+                    ref={paneRef}
+                    className="kwant-chart-pane relative z-10 flex w-[93%] flex-1 overflow-hidden"
+                >
                     <div className="kwant-chart-canvas-host relative flex flex-1">
                         <Chart
                             asset={asset}
@@ -137,6 +169,7 @@ const ChartContainer: React.FC<ChartContainerProps> = ({
                     {configurable && setting && (
                         <div
                             className="kwant-settings-overlay"
+                            data-height-mode={settingsHeightMode}
                             style={{ zIndex: 1000, padding: 12 }}
                             onMouseDown={(event) => {
                                 if (event.target === event.currentTarget) {

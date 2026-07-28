@@ -51,6 +51,51 @@ const normalizeSize = (value?: number | string, fallback = "100%") => {
 
 const cloneCandle = (candle: CandleData): CandleData => ({ ...candle });
 
+function getContrastTextColor(color: string) {
+    const value = color.trim();
+    const hexMatch = value.match(
+        /^#([\da-f]{3}|[\da-f]{4}|[\da-f]{6}|[\da-f]{8})$/i
+    );
+    let channels: number[] | null = null;
+
+    if (hexMatch) {
+        const raw = hexMatch[1];
+        const expanded =
+            raw.length <= 4
+                ? raw
+                      .split("")
+                      .map((part) => `${part}${part}`)
+                      .join("")
+                : raw;
+        channels = [0, 2, 4].map((offset) =>
+            Number.parseInt(expanded.slice(offset, offset + 2), 16)
+        );
+    } else {
+        const rgbMatch = value.match(
+            /^rgba?\(\s*([\d.]+)[,\s]+\s*([\d.]+)[,\s]+\s*([\d.]+)/i
+        );
+        if (rgbMatch) {
+            channels = rgbMatch.slice(1, 4).map(Number);
+        }
+    }
+
+    if (!channels || channels.some((channel) => !Number.isFinite(channel))) {
+        return "#ffffff";
+    }
+
+    const [red, green, blue] = channels.map((channel) => {
+        const normalized = Math.min(255, Math.max(0, channel)) / 255;
+        return normalized <= 0.04045
+            ? normalized / 12.92
+            : ((normalized + 0.055) / 1.055) ** 2.4;
+    });
+    const luminance = 0.2126 * red + 0.7152 * green + 0.0722 * blue;
+    const whiteContrast = 1.05 / (luminance + 0.05);
+    const darkContrast = (luminance + 0.05) / 0.05;
+
+    return darkContrast > whiteContrast ? "#090b10" : "#ffffff";
+}
+
 function isChartSettingsValue(value: unknown): value is ChartSettingsValue {
     if (!value || typeof value !== "object") return false;
     const candidate = value as Partial<ChartSettingsValue>;
@@ -425,6 +470,8 @@ function KwantChartContent({
         ["--kwant-grid-color" as string]: appearance.gridColor,
         ["--kwant-secondary" as string]: appearance.secondaryColor,
         ["--kwant-secondary-text" as string]: appearance.secondaryColor,
+        ["--kwant-secondary-contrast" as string]:
+            getContrastTextColor(appearance.secondaryColor),
         ["--kwant-secondary-soft" as string]: `color-mix(in srgb, ${appearance.secondaryColor} 20%, transparent)`,
         ["--kwant-crosshair-color" as string]: appearance.crosshairColor,
         ["--kwant-crosshair-dash" as string]:
