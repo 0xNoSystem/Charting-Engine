@@ -1,15 +1,13 @@
 import { defineConfig } from "tsup";
 
 export default defineConfig({
-  entry: ["src/index.ts"],
+  entry: ["src/index.ts", "src/line.ts"],
   format: ["esm", "cjs"],
   dts: true,
   minify: false,
   splitting: false,
   sourcemap: true,
   clean: true,
-  injectStyle: true,
-  css: true,
   target: "es2019",
   platform: "browser",
   treeshake: true,
@@ -18,5 +16,4 @@ export default defineConfig({
     return { js: format === "esm" ? ".mjs" : ".cjs" };
   },
   external: ["react", "react-dom"],
-  noExternal: ["react-colorful"],
 });

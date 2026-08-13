@@ -1,5 +1,6 @@
 import React from "react";
 import type { CandleData } from "../utils";
+import { useChartContext } from "../ChartContextStore";
 
 interface CandleInfoProps {
     candle: CandleData;
@@ -11,10 +12,10 @@ const DIFF_CLASS = {
     down: "text-red-400",
 } as const;
 
-const formatPrice = (n: number) => {
-    if (n > 1 && n < 2) return n.toFixed(4);
-    if (n < 1) return n.toFixed(6);
-    return n.toFixed(2);
+const formatPrice = (n: number, locale: string) => {
+    const absolute = Math.abs(n);
+    const decimals = absolute > 0 && absolute < 1 ? 6 : 2;
+    return n.toLocaleString(locale, { maximumFractionDigits: decimals });
 };
 
 export function formatVolume(n: number): string {
@@ -33,6 +34,9 @@ export function formatVolume(n: number): string {
 }
 
 const CandleInfo: React.FC<CandleInfoProps> = ({ candle }) => {
+    const { priceFormatter, volumeFormatter, locale } = useChartContext();
+    const price = (value: number) =>
+        priceFormatter?.(value) ?? formatPrice(value, locale);
     const diff = candle.close - candle.open;
     const pct = candle.open !== 0 ? (diff / candle.open) * 100 : 0;
     const diffState: keyof typeof DIFF_CLASS =
@@ -43,23 +47,26 @@ const CandleInfo: React.FC<CandleInfoProps> = ({ candle }) => {
         <div className="pointer-events-none absolute top-3 left-4 rounded border border-white/20 bg-black/80 px-3 py-2 text-xs text-white/80">
             <div className="flex gap-2">
                 <span className="text-white/50">H</span>
-                <span>{formatPrice(candle.high)}</span>
+                <span>{price(candle.high)}</span>
             </div>
             <div className="flex gap-2">
                 <span className="text-white/50">C</span>
-                <span>{formatPrice(candle.close)}</span>
+                <span>{price(candle.close)}</span>
             </div>
             <div className="flex gap-2">
                 <span className="text-white/50">L</span>
-                <span>{formatPrice(candle.low)}</span>
+                <span>{price(candle.low)}</span>
             </div>
             <div className="flex gap-2">
                 <span className="text-white/50">O</span>
-                <span>{formatPrice(candle.open)}</span>
+                <span>{price(candle.open)}</span>
             </div>
             <div className="flex gap-2">
                 <span className="text-white/50">VLM</span>
-                <span>{formatVolume(candle.volume)}</span>
+                <span>
+                    {volumeFormatter?.(candle.volume) ??
+                        formatVolume(candle.volume)}
+                </span>
             </div>
 
             <div className="mt-1 flex justify-between text-[11px]">

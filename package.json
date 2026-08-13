@@ -1,7 +1,7 @@
 {
   "name": "kwant",
-  "version": "2.0.4",
-  "description": "React Multi-source candlestick chart component.",
+  "version": "3.0.0",
+  "description": "React canvas charts for candlesticks, numeric lines, and PnL.",
   "license": "MIT",
   "type": "module",
   "homepage": "https://www.npmjs.com/package/kwant",
@@ -15,24 +15,37 @@
   "main": "./dist/index.cjs",
   "module": "./dist/index.mjs",
   "types": "./dist/index.d.ts",
+  "style": "./dist/styles.css",
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
       "import": "./dist/index.mjs",
       "require": "./dist/index.cjs"
-    }
+    },
+    "./line": {
+      "types": "./dist/line.d.ts",
+      "import": "./dist/line.mjs",
+      "require": "./dist/line.cjs"
+    },
+    "./styles.css": "./dist/styles.css",
+    "./line.css": "./dist/line.css"
   },
   "files": [
-    "dist"
+    "dist",
+    "MIGRATION.md",
+    "CHANGELOG.md"
   ],
   "sideEffects": [
-    "./src/index.css",
-    "./dist/index.css"
+    "./dist/styles.css",
+    "./dist/line.css"
   ],
   "scripts": {
-    "build:css": "mkdir -p dist && cp ./src/index.css ./dist/index.css",
+    "build:css": "mkdir -p dist && cp ./src/index.css ./dist/styles.css && cp ./src/line.css ./dist/line.css",
     "build": "tsup && npm run build:css",
     "lint": "tsc --noEmit",
+    "test:build": "tsup --config tsup.test.config.ts",
+    "test": "npm run test:build && node --test tests/core.test.cjs tests/components.test.cjs",
+    "test:package": "npm run build && node --test tests/package-smoke.test.mjs",
     "dev": "tsup --watch",
     "clean": "rm -rf dist",
     "prepare": "npm run build"
@@ -49,8 +62,5 @@
   },
   "engines": {
     "node": ">=18"
-  },
-  "dependencies": {
-    "react-colorful": "^5.8.0"
   }
 }

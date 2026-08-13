@@ -2,13 +2,13 @@ import React, { useRef, useEffect, useState } from "react";
 import Chart from "./Chart";
 import PriceScale from "./visual/PriceScale";
 import TimeScale from "./visual/TimeScale";
-import IntervalOverlay from "./visual/Interval";
 import ChartSettings, {
     type ChartSettingsValue,
 } from "./visual/ChartSettings";
 import CandleInfo from "./visual/CandleInfo";
 import { useChartContext } from "./ChartContextStore";
 import { xToTime } from "./utils";
+import { nearestIndex } from "../core/search";
 
 import type { TimeFrame } from "../types";
 import type { CandleData } from "./utils";
@@ -116,20 +116,17 @@ const ChartContainer: React.FC<ChartContainerProps> = ({
 
         const hoverTime = xToTime(crosshairX, startTime, endTime, width);
 
-        let nearest: CandleData | null = null;
-        let bestDiff = Infinity;
-
-        for (const candle of candles) {
-            if (candle.end < startTime || candle.start > endTime) continue;
-            const mid = (candle.start + candle.end) / 2;
-            const diff = Math.abs(mid - hoverTime);
-            if (diff < bestDiff) {
-                bestDiff = diff;
-                nearest = candle;
-            }
-        }
-
-        setHoveredCandle(nearest);
+        const index = nearestIndex(
+            candles,
+            hoverTime,
+            (candle) => (candle.start + candle.end) / 2
+        );
+        const nearest = index >= 0 ? candles[index] : null;
+        setHoveredCandle(
+            nearest && nearest.end >= startTime && nearest.start <= endTime
+                ? nearest
+                : null
+        );
     }, [selectingInterval, crosshairX, width, startTime, endTime, candles]);
 
     useEffect(() => {
@@ -161,7 +158,6 @@ const ChartContainer: React.FC<ChartContainerProps> = ({
                             settingInterval={settingInterval}
                             livePrice={livePrice}
                         />
-                        <IntervalOverlay />
                         {hoveredCandle && mouseOnChart && (
                             <CandleInfo candle={hoveredCandle} />
                         )}

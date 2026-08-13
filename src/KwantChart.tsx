@@ -1,16 +1,35 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import ChartProvider, { useChartContext } from "./chart/ChartContext";
 import ChartContainer from "./chart/ChartContainer";
-import { getTimeframeCache, peekTimeframeCache } from "./chart/candleCache";
+import { normalizeCandleSeries, upsertSorted } from "./core/data";
 import {
     DEFAULT_CANDLE_COLORS,
     DEFAULT_CHART_APPEARANCE,
     type ChartAppearance,
     type ChartSettingsValue,
-    type CrosshairLineStyle,
 } from "./chart/visual/ChartSettings";
-import type { CandleData, TimeFrame } from "./types";
-import { TIMEFRAME_CAMELCASE } from "./types";
+import type {
+    CandleData,
+    CandleInterval,
+    CandlePoint,
+    CandleSeries,
+    DataIssueReport,
+    DataMode,
+    InvalidDataBehavior,
+    KwantTheme,
+    TimeFormatter,
+    TimeFrame,
+    TimeRange,
+    TimeZoneMode,
+    ValueFormatter,
+} from "./types";
+import {
+    KwantDataError,
+    TIMEFRAME_CAMELCASE,
+    TIMEFRAME_INTERVAL,
+} from "./types";
+import { nearestIndex } from "./core/search";
+import { xToTime } from "./chart/utils";
 
 type RangePreset = "24H" | "7D" | "30D" | "YTD" | "CUSTOM";
 
@@ -30,7 +49,7 @@ const TIMEFRAME_BY_INTERVAL = new Map<string, TimeFrame>(
     ])
 );
 const EMPTY_CANDLES: CandleData[] = [];
-const SETTINGS_STORAGE_PREFIX = "kwant-chart:settings:";
+const SETTINGS_STORAGE_PREFIX = "kwant:v3:settings:";
 
 const RANGE_PRESET_BUTTON_CLASSES = {
     active: "kwant-secondary-border kwant-secondary-text kwant-secondary-hover rounded border transition",
@@ -48,8 +67,6 @@ const normalizeSize = (value?: number | string, fallback = "100%") => {
     if (value === undefined) return fallback;
     return typeof value === "number" ? `${value}px` : value;
 };
-
-const cloneCandle = (candle: CandleData): CandleData => ({ ...candle });
 
 function getContrastTextColor(color: string) {
     const value = color.trim();
@@ -114,59 +131,6 @@ function isChartSettingsValue(value: unknown): value is ChartSettingsValue {
     );
 }
 
-function isValidCandle(candle: CandleData): boolean {
-    const numericValues = [
-        candle.open,
-        candle.high,
-        candle.low,
-        candle.close,
-        candle.start,
-        candle.end,
-        candle.volume,
-        candle.trades,
-    ];
-    if (!numericValues.every(Number.isFinite) || candle.end <= candle.start) {
-        return false;
-    }
-    if (candle.volume < 0 || candle.trades < 0) return false;
-    if (candle.high < Math.max(candle.open, candle.close, candle.low)) {
-        return false;
-    }
-    if (candle.low > Math.min(candle.open, candle.close, candle.high)) {
-        return false;
-    }
-    return Boolean(candle.asset?.trim() && candle.interval);
-}
-
-function normalizeCandles(candles: CandleData[]) {
-    const grouped = new Map<TimeFrame, Map<number, CandleData>>();
-
-    for (const candle of candles) {
-        const timeframe = TIMEFRAME_BY_INTERVAL.get(candle.interval);
-        if (!timeframe || !isValidCandle(candle)) continue;
-        let byTimestamp = grouped.get(timeframe);
-        if (!byTimestamp) {
-            byTimestamp = new Map();
-            grouped.set(timeframe, byTimestamp);
-        }
-        // Later entries deliberately replace earlier corrections for the same bar.
-        byTimestamp.set(candle.start, cloneCandle(candle));
-    }
-
-    return new Map(
-        Array.from(grouped, ([timeframe, byTimestamp]) => [
-            timeframe,
-            Array.from(byTimestamp.values()).sort((a, b) => a.start - b.start),
-        ])
-    );
-}
-
-function getCachedCandles(sourceName: string, timeframe: TimeFrame) {
-    return Array.from(
-        peekTimeframeCache(sourceName, timeframe)?.values() ?? []
-    ).sort((a, b) => a.start - b.start);
-}
-
 function getSeriesBounds(candles: CandleData[]) {
     let start = Infinity;
     let end = -Infinity;
@@ -184,28 +148,36 @@ const toDateTimeLocal = (ms: number) => {
 };
 
 export interface KwantChartProps {
-    /** Required caller-owned HLOCV candles. Intervals use values such as 1m, 1h, and 1d. */
-    hlocv_data: CandleData[];
-    /** Displayed in place of the former exchange/market controls and used as the cache namespace. */
-    source_name?: string;
+    /** Caller-owned candle series grouped by interval. */
+    series: readonly CandleSeries[];
+    /** Optional source label. */
+    sourceName?: string;
     /** Show the source name in the chart header. Defaults to false. */
-    show_source?: boolean;
-    /** Opt in to retained, timestamp-upserted candles for the named source. Defaults to false. */
-    enable_caching?: boolean;
-    /** Optional display label; defaults to the selected candle series' asset. */
+    showSource?: boolean;
     asset?: string;
     title?: string;
     width?: number | string;
     height?: number | string;
-    backgroundColor?: string;
-    gridColor?: string;
-    secondaryColor?: string;
-    crosshairColor?: string;
-    crosshairLineStyle?: CrosshairLineStyle;
+    theme?: Partial<KwantTheme>;
     /** Show the latest candle close as a dotted line and price-scale label. Defaults to false. */
-    live_price?: boolean;
-    /** Allow users to change runtime chart colors through the settings control. Defaults to true. */
-    configurable?: boolean;
+    livePrice?: boolean;
+    /** Show runtime appearance settings. Defaults to true. */
+    showSettings?: boolean;
+    interval?: CandleInterval;
+    defaultInterval?: CandleInterval;
+    onIntervalChange?: (interval: CandleInterval) => void;
+    dataMode?: DataMode;
+    dataKey?: string | number;
+    maxPointsPerSeries?: number;
+    invalidDataBehavior?: InvalidDataBehavior;
+    onDataIssues?: (report: DataIssueReport) => void;
+    onVisibleRangeChange?: (range: TimeRange) => void;
+    onCrosshairChange?: (candle: CandlePoint | null) => void;
+    priceFormatter?: ValueFormatter;
+    volumeFormatter?: ValueFormatter;
+    timeFormatter?: TimeFormatter;
+    locale?: string;
+    timeZone?: TimeZoneMode;
 }
 
 type KwantChartContentProps = Omit<KwantChartProps, "width" | "height"> & {
@@ -214,21 +186,31 @@ type KwantChartContentProps = Omit<KwantChartProps, "width" | "height"> & {
 };
 
 function KwantChartContent({
-    hlocv_data,
-    source_name,
-    show_source = false,
-    enable_caching = false,
+    series,
+    sourceName,
+    showSource = false,
     asset,
     title,
     width,
     height,
-    backgroundColor,
-    gridColor,
-    secondaryColor,
-    crosshairColor,
-    crosshairLineStyle,
-    live_price = false,
-    configurable = true,
+    theme,
+    livePrice = false,
+    showSettings = true,
+    interval,
+    defaultInterval,
+    onIntervalChange,
+    dataMode = "replace",
+    dataKey,
+    maxPointsPerSeries = 50_000,
+    invalidDataBehavior = "filter",
+    onDataIssues,
+    onVisibleRangeChange,
+    onCrosshairChange,
+    priceFormatter,
+    volumeFormatter,
+    timeFormatter,
+    locale = "en-US",
+    timeZone = "UTC",
 }: KwantChartContentProps) {
     const {
         startTime,
@@ -236,32 +218,56 @@ function KwantChartContent({
         setTimeRange,
         candleColor,
         setCandleColor,
+        crosshairX,
+        width: chartWidth,
+        mouseOnChart,
     } = useChartContext();
-    const [timeframe, setTimeframe] = useState<TimeFrame>("hour4");
+    const [uncontrolledTimeframe, setUncontrolledTimeframe] =
+        useState<TimeFrame>(() =>
+            (defaultInterval
+                ? TIMEFRAME_CAMELCASE[defaultInterval]
+                : undefined) ??
+            (series[0]
+                ? TIMEFRAME_CAMELCASE[series[0].interval]
+                : undefined) ??
+            "hour4"
+        );
+    const timeframe = interval
+        ? TIMEFRAME_CAMELCASE[interval]
+        : uncontrolledTimeframe;
+    const selectTimeframe = useCallback(
+        (next: TimeFrame) => {
+            if (!interval) setUncontrolledTimeframe(next);
+            onIntervalChange?.(TIMEFRAME_INTERVAL[next]);
+        },
+        [interval, onIntervalChange]
+    );
     const [rangePreset, setRangePreset] = useState<RangePreset>("30D");
     const [showDatePicker, setShowDatePicker] = useState(false);
     const [customStart, setCustomStart] = useState("");
     const [customEnd, setCustomEnd] = useState("");
-    const [cacheRevision, setCacheRevision] = useState(0);
     const defaultAppearance = useMemo<ChartAppearance>(
         () => ({
             backgroundColor:
-                backgroundColor ?? DEFAULT_CHART_APPEARANCE.backgroundColor,
-            gridColor: gridColor ?? DEFAULT_CHART_APPEARANCE.gridColor,
+                theme?.containerBackground ??
+                DEFAULT_CHART_APPEARANCE.backgroundColor,
+            gridColor:
+                theme?.plotBackground ?? DEFAULT_CHART_APPEARANCE.gridColor,
             secondaryColor:
-                secondaryColor ?? DEFAULT_CHART_APPEARANCE.secondaryColor,
+                theme?.accentColor ?? DEFAULT_CHART_APPEARANCE.secondaryColor,
             crosshairColor:
-                crosshairColor ?? DEFAULT_CHART_APPEARANCE.crosshairColor,
+                theme?.crosshairColor ??
+                DEFAULT_CHART_APPEARANCE.crosshairColor,
             crosshairLineStyle:
-                crosshairLineStyle ??
+                theme?.crosshairLineStyle ??
                 DEFAULT_CHART_APPEARANCE.crosshairLineStyle,
         }),
         [
-            backgroundColor,
-            crosshairColor,
-            crosshairLineStyle,
-            gridColor,
-            secondaryColor,
+            theme?.accentColor,
+            theme?.containerBackground,
+            theme?.crosshairColor,
+            theme?.crosshairLineStyle,
+            theme?.plotBackground,
         ]
     );
     const [appearance, setAppearance] = useState<ChartAppearance>(
@@ -273,7 +279,7 @@ function KwantChartContent({
         setAppearance(defaultAppearance);
     }, [defaultAppearance]);
 
-    const normalizedSourceName = source_name?.trim() || "";
+    const normalizedSourceName = sourceName?.trim() || "";
     const sourceNameCharacters = Array.from(normalizedSourceName);
     const sourceNameLabel =
         sourceNameCharacters.length > 20
@@ -282,15 +288,17 @@ function KwantChartContent({
     const settingsScope =
         normalizedSourceName ||
         asset?.trim() ||
-        hlocv_data[0]?.asset?.trim() ||
         "default";
     const settingsStorageKey = `${SETTINGS_STORAGE_PREFIX}${settingsScope}`;
     const developerSettings = useMemo<ChartSettingsValue>(
         () => ({
-            candles: DEFAULT_CANDLE_COLORS,
+            candles: {
+                up: theme?.upColor ?? DEFAULT_CANDLE_COLORS.up,
+                down: theme?.downColor ?? DEFAULT_CANDLE_COLORS.down,
+            },
             appearance: defaultAppearance,
         }),
-        [defaultAppearance]
+        [defaultAppearance, theme?.downColor, theme?.upColor]
     );
     const applySettings = useCallback(
         (value: ChartSettingsValue) => {
@@ -301,7 +309,7 @@ function KwantChartContent({
     );
 
     useEffect(() => {
-        if (!configurable || typeof window === "undefined") {
+        if (!showSettings || typeof window === "undefined") {
             applySettings(developerSettings);
             return;
         }
@@ -324,7 +332,7 @@ function KwantChartContent({
         }
     }, [
         applySettings,
-        configurable,
+        showSettings,
         developerSettings,
         settingsStorageKey,
     ]);
@@ -356,34 +364,70 @@ function KwantChartContent({
         applySettings(developerSettings);
     }, [applySettings, developerSettings, settingsStorageKey]);
 
-    const canUseCache = enable_caching && Boolean(normalizedSourceName);
-    const normalizedCandles = useMemo(
-        () => normalizeCandles(hlocv_data),
-        [hlocv_data]
+    const assetLabel = asset?.trim() || "Chart";
+    const normalizedInput = useMemo(
+        () => normalizeCandleSeries(series, assetLabel),
+        [assetLabel, series]
     );
-
+    if (normalizedInput.report && invalidDataBehavior === "throw") {
+        throw new KwantDataError(normalizedInput.report);
+    }
     useEffect(() => {
-        if (!canUseCache) return;
+        if (normalizedInput.report) onDataIssues?.(normalizedInput.report);
+    }, [normalizedInput.report, onDataIssues]);
 
-        for (const [frame, candles] of normalizedCandles) {
-            const cache = getTimeframeCache(normalizedSourceName, frame);
-            for (const candle of candles) {
-                cache.set(candle.start, cloneCandle(candle));
+    const normalizedCandles = useMemo(
+        () =>
+            new Map<TimeFrame, CandleData[]>(
+                Array.from(normalizedInput.byInterval, ([short, candles]) => [
+                    TIMEFRAME_BY_INTERVAL.get(short)!,
+                    candles,
+                ])
+            ),
+        [normalizedInput.byInterval]
+    );
+    const [retainedCandles, setRetainedCandles] = useState(
+        () =>
+            new Map<TimeFrame, CandleData[]>(
+                Array.from(normalizedCandles, ([frame, candles]) => [
+                    frame,
+                    dataMode === "upsert"
+                        ? upsertSorted(
+                              [],
+                              candles,
+                              (candle) => candle.start,
+                              maxPointsPerSeries
+                          )
+                        : candles,
+                ])
+            )
+    );
+    const retainedDataKey = useRef(dataKey);
+    useEffect(() => {
+        setRetainedCandles((previous) => {
+            const reset = retainedDataKey.current !== dataKey;
+            retainedDataKey.current = dataKey;
+            if (dataMode === "replace" || reset) {
+                return new Map(normalizedCandles);
             }
-        }
-        setCacheRevision((revision) => revision + 1);
-    }, [canUseCache, normalizedCandles, normalizedSourceName]);
+            const next = new Map(previous);
+            for (const [frame, candles] of normalizedCandles) {
+                next.set(
+                    frame,
+                    upsertSorted(
+                        previous.get(frame) ?? [],
+                        candles,
+                        (candle) => candle.start,
+                        maxPointsPerSeries
+                    )
+                );
+            }
+            return next;
+        });
+    }, [dataKey, dataMode, maxPointsPerSeries, normalizedCandles]);
 
-    const candlesByTimeframe = useMemo(() => {
-        if (!canUseCache) return normalizedCandles;
-
-        return new Map(
-            Array.from(normalizedCandles.keys(), (frame) => [
-                frame,
-                getCachedCandles(normalizedSourceName, frame),
-            ])
-        );
-    }, [cacheRevision, canUseCache, normalizedCandles, normalizedSourceName]);
+    const candlesByTimeframe =
+        dataMode === "replace" ? normalizedCandles : retainedCandles;
 
     const supportedTimeframes = useMemo(
         () => TIMEFRAME_ORDER.filter((frame) => candlesByTimeframe.has(frame)),
@@ -395,13 +439,47 @@ function KwantChartContent({
             supportedTimeframes.length > 0 &&
             !supportedTimeframes.includes(timeframe)
         ) {
-            setTimeframe(supportedTimeframes[0]);
+            if (!interval) selectTimeframe(supportedTimeframes[0]);
         }
-    }, [supportedTimeframes, timeframe]);
+    }, [interval, selectTimeframe, supportedTimeframes, timeframe]);
 
     const candleData =
         candlesByTimeframe.get(timeframe) ?? EMPTY_CANDLES;
-    const assetLabel = asset?.trim() || candleData[0]?.asset || "Chart";
+
+    useEffect(() => {
+        if (
+            !onCrosshairChange ||
+            !mouseOnChart ||
+            crosshairX === null ||
+            chartWidth <= 0 ||
+            endTime <= startTime ||
+            !candleData.length
+        ) {
+            onCrosshairChange?.(null);
+            return;
+        }
+        const time = xToTime(crosshairX, startTime, endTime, chartWidth);
+        const index = nearestIndex(
+            candleData,
+            time,
+            (candle) => (candle.start + candle.end) / 2
+        );
+        onCrosshairChange(index >= 0 ? candleData[index] : null);
+    }, [
+        candleData,
+        chartWidth,
+        crosshairX,
+        endTime,
+        mouseOnChart,
+        onCrosshairChange,
+        startTime,
+    ]);
+
+    useEffect(() => {
+        if (endTime > startTime) {
+            onVisibleRangeChange?.({ from: startTime, to: endTime });
+        }
+    }, [endTime, onVisibleRangeChange, startTime]);
 
     const applyPresetTimeRange = useCallback(
         (preset: Exclude<RangePreset, "CUSTOM">, data = candleData) => {
@@ -468,6 +546,8 @@ function KwantChartContent({
         minHeight: height === undefined ? "70vh" : undefined,
         ["--kwant-chart-container-bg" as string]: appearance.backgroundColor,
         ["--kwant-grid-color" as string]: appearance.gridColor,
+        ["--kwant-axis-grid-color" as string]:
+            theme?.gridColor ?? "rgba(148, 163, 184, 0.24)",
         ["--kwant-secondary" as string]: appearance.secondaryColor,
         ["--kwant-secondary-text" as string]: appearance.secondaryColor,
         ["--kwant-secondary-contrast" as string]:
@@ -501,7 +581,7 @@ function KwantChartContent({
                         </h2>
                     </div>
                     <div className="kwant-header-controls flex items-center gap-2">
-                        {show_source && normalizedSourceName && (
+                        {showSource && normalizedSourceName && (
                             <span
                                 className="rounded border border-white/30 bg-black/70 px-2 py-1 text-xs tracking-wide text-white/70"
                                 title={normalizedSourceName}
@@ -584,7 +664,7 @@ function KwantChartContent({
                                             ? "kwant-timeframe-button cursor-pointer hover:bg-black"
                                             : "kwant-timeframe-button cursor-not-allowed"
                                     }
-                                    onClick={() => setTimeframe(frame)}
+                                    onClick={() => selectTimeframe(frame)}
                                 >
                                     <span
                                         className={`kwant-timeframe-label ${TIMEFRAME_LABEL_CLASSES[state]}`}
@@ -607,14 +687,14 @@ function KwantChartContent({
                             tf={timeframe}
                             settingInterval={false}
                             candleData={candleData}
-                            livePrice={live_price}
-                            configurable={configurable}
+                            livePrice={livePrice}
+                            configurable={showSettings}
                             settingsValue={{
                                 candles: candleColor,
                                 appearance,
                             }}
                             defaultSettingsValue={{
-                                candles: DEFAULT_CANDLE_COLORS,
+                                candles: developerSettings.candles,
                                 appearance: defaultAppearance,
                             }}
                             onApplySettings={applySettings}
@@ -639,7 +719,13 @@ export default function KwantChart(props: KwantChartProps) {
 
     return (
         <div className="kwant-chart-frame" style={frameStyle}>
-            <ChartProvider>
+            <ChartProvider
+                locale={props.locale}
+                timeZone={props.timeZone}
+                priceFormatter={props.priceFormatter}
+                volumeFormatter={props.volumeFormatter}
+                timeFormatter={props.timeFormatter}
+            >
                 <KwantChartContent {...props} width="100%" height="100%" />
             </ChartProvider>
         </div>

@@ -3,6 +3,7 @@ import { useChartContext } from "../ChartContextStore";
 import { timeToX, xToTime, formatUTC, computeTimePan } from "../utils";
 import { MAX_CANDLE_WIDTH } from "../constants";
 import { TF_TO_MS } from "../../types";
+import { nearestIndex } from "../../core/search";
 
 type TouchPoint = {
     clientX: number;
@@ -265,6 +266,10 @@ const TimeScale: React.FC = () => {
         timeframe,
         intervalStartX,
         intervalEndX,
+        candles,
+        timeFormatter,
+        locale,
+        timeZone,
     } = useChartContext();
 
     const minRange = timeframe ? (TF_TO_MS[timeframe] ?? 1) : 1;
@@ -296,33 +301,80 @@ const TimeScale: React.FC = () => {
     const labelTicks = buildTicks(labelStep, startTime, endTime, width);
 
     const getTickLabel = (t: number, prev: number | null, stepMs: number) => {
+        if (timeFormatter) {
+            return { label: timeFormatter(t), major: false };
+        }
+
+        const local = timeZone === "local";
+        const date = new Date(t);
+        const previousDate = prev === null ? null : new Date(prev);
+        const sameDay =
+            previousDate !== null &&
+            (local
+                ? date.getFullYear() === previousDate.getFullYear() &&
+                  date.getMonth() === previousDate.getMonth() &&
+                  date.getDate() === previousDate.getDate()
+                : isSameDayUtc(prev!, t));
+        const sameMonth =
+            previousDate !== null &&
+            (local
+                ? date.getFullYear() === previousDate.getFullYear() &&
+                  date.getMonth() === previousDate.getMonth()
+                : isSameMonthUtc(prev!, t));
+        const yearBoundary = local
+            ? date.getMonth() === 0 && date.getDate() === 1
+            : isYearBoundaryUtc(t);
+        const format = (
+            kind: "time" | "monthDay" | "month" | "year"
+        ) => {
+            if (!local) {
+                if (kind === "time") return formatTimeUtc(t);
+                if (kind === "monthDay") return formatMonthDayUtc(t);
+                if (kind === "month") return formatMonthUtc(t);
+                return formatYearUtc(t);
+            }
+            if (kind === "time") {
+                return date.toLocaleTimeString(locale, {
+                    hour: "2-digit",
+                    minute: "2-digit",
+                    hour12: false,
+                });
+            }
+            return date.toLocaleDateString(locale, {
+                ...(kind === "monthDay"
+                    ? { month: "short" as const, day: "numeric" as const }
+                    : kind === "month"
+                      ? { month: "short" as const }
+                      : { year: "numeric" as const }),
+            });
+        };
+
         if (stepMs < 24 * 60 * 60_000) {
             const showDate =
                 (prev === null && showDateOnFirst) ||
-                (prev !== null && !isSameDayUtc(prev, t));
+                (prev !== null && !sameDay);
             return {
-                label: showDate ? formatMonthDayUtc(t) : formatTimeUtc(t),
+                label: showDate ? format("monthDay") : format("time"),
                 major: showDate,
             };
         }
 
         if (stepMs < 30 * 24 * 60 * 60_000) {
-            const monthChanged = prev !== null && !isSameMonthUtc(prev, t);
+            const monthChanged = prev !== null && !sameMonth;
             return {
-                label: monthChanged ? formatMonthUtc(t) : formatMonthDayUtc(t),
+                label: monthChanged ? format("month") : format("monthDay"),
                 major: monthChanged,
             };
         }
 
         if (stepMs < 365 * 24 * 60 * 60_000) {
-            const yearBoundary = isYearBoundaryUtc(t);
             return {
-                label: yearBoundary ? formatYearUtc(t) : formatMonthUtc(t),
+                label: yearBoundary ? format("year") : format("month"),
                 major: yearBoundary,
             };
         }
 
-        return { label: formatYearUtc(t), major: isYearBoundaryUtc(t) };
+        return { label: format("year"), major: yearBoundary };
     };
 
     const crosshairTime =
@@ -330,7 +382,29 @@ const TimeScale: React.FC = () => {
             ? xToTime(crosshairX, startTime, endTime, width)
             : null;
     const crosshairXValue = crosshairX ?? 0;
+    const crosshairCandleIndex =
+        crosshairTime === null
+            ? -1
+            : nearestIndex(
+                  candles,
+                  crosshairTime,
+                  (candle) => (candle.start + candle.end) / 2
+              );
+    const crosshairDataTime =
+        crosshairCandleIndex >= 0
+            ? candles[crosshairCandleIndex].start
+            : crosshairTime;
     const formatCrosshairTime = (t: number) => {
+        if (timeFormatter) return timeFormatter(t);
+        if (timeZone === "local") {
+            return new Date(t).toLocaleString(locale, {
+                month: "short",
+                day: "numeric",
+                year: "numeric",
+                hour: "2-digit",
+                minute: "2-digit",
+            });
+        }
         if (!timeframe) return formatUTC(t);
         if (timeframe === "month") {
             return formatMonthYearUtc(t);
@@ -577,7 +651,7 @@ const TimeScale: React.FC = () => {
                                     y1={0}
                                     x2={tick.x}
                                     y2={-height - 10}
-                                    stroke="#444"
+                                    stroke="var(--kwant-axis-grid-color, #444)"
                                     strokeOpacity={lineOpacity}
                                     strokeWidth={lineWidth}
                                 />
@@ -621,7 +695,9 @@ const TimeScale: React.FC = () => {
                                 fontSize={fontSize}
                                 fontWeight="bold"
                             >
-                                {formatCrosshairTime(crosshairTime)}
+                                {formatCrosshairTime(
+                                    crosshairDataTime ?? crosshairTime
+                                )}
                             </text>
                         </>
                     )}

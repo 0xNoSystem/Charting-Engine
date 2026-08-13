@@ -1,6 +1,7 @@
 import { createContext, useContext } from "react";
 import type { TimeFrame } from "../types";
 import type { CandleData } from "./utils";
+import type { TimeFormatter, TimeZoneMode, ValueFormatter } from "../types";
 
 export interface ChartContextState {
     width: number;
@@ -25,6 +26,12 @@ export interface ChartContextState {
     intervalEndX: number | null;
 
     mouseOnChart: boolean;
+
+    locale: string;
+    timeZone: TimeZoneMode;
+    priceFormatter?: ValueFormatter;
+    volumeFormatter?: ValueFormatter;
+    timeFormatter?: TimeFormatter;
 }
 
 export interface ChartContextActions {

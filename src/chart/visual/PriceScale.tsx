@@ -110,6 +110,7 @@ const PriceScale: React.FC<PriceScaleProps> = ({ livePrice }) => {
         mouseOnChart,
         selectingInterval,
         candleColor,
+        priceFormatter,
     } = useChartContext();
 
     const svgRef = useRef<SVGSVGElement>(null);
@@ -210,6 +211,7 @@ const PriceScale: React.FC<PriceScaleProps> = ({ livePrice }) => {
 
     const formatAxisPrice = (value: number) => {
         if (!Number.isFinite(value)) return "—";
+        if (priceFormatter) return priceFormatter(value);
         if (step <= 0) return formatCompactPrice(value, assetDecimals);
         const rounded = roundToStep(value, step);
         const safeValue = Math.abs(rounded) < step / 2 ? 0 : rounded;
@@ -217,6 +219,7 @@ const PriceScale: React.FC<PriceScaleProps> = ({ livePrice }) => {
     };
     const formatCrosshairPrice = (value: number) => {
         if (!Number.isFinite(value)) return "—";
+        if (priceFormatter) return priceFormatter(value);
         return formatCompactPrice(value, assetDecimals);
     };
 
@@ -229,7 +232,7 @@ const PriceScale: React.FC<PriceScaleProps> = ({ livePrice }) => {
         const loopStep = showMinor ? minorStep : step;
         const first = Math.floor(minPrice / loopStep) * loopStep;
         const last = Math.ceil(maxPrice / loopStep) * loopStep;
-        const epsilon = step * 1e-6;
+        const epsilon = 1e-6;
         for (
             let price = first;
             price <= last + loopStep * 0.5;
@@ -436,7 +439,7 @@ const PriceScale: React.FC<PriceScaleProps> = ({ livePrice }) => {
                         y1={p.y}
                         x2={-width}
                         y2={p.y}
-                        stroke="#444"
+                        stroke="var(--kwant-axis-grid-color, #444)"
                         strokeOpacity={p.major ? 0.4 : 0.22}
                         strokeWidth={p.major ? 0.8 : 0.6}
                     />

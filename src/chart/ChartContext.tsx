@@ -1,12 +1,31 @@
 import { useCallback, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
-import type { TimeFrame } from "../types";
+import type {
+    TimeFormatter,
+    TimeFrame,
+    TimeZoneMode,
+    ValueFormatter,
+} from "../types";
 import type { CandleData } from "./utils";
 import { ChartContext } from "./ChartContextStore";
 
-type ChartProviderProps = { children: ReactNode };
+type ChartProviderProps = {
+    children: ReactNode;
+    locale?: string;
+    timeZone?: TimeZoneMode;
+    priceFormatter?: ValueFormatter;
+    volumeFormatter?: ValueFormatter;
+    timeFormatter?: TimeFormatter;
+};
 
-export default function ChartProvider({ children }: ChartProviderProps) {
+export default function ChartProvider({
+    children,
+    locale = "en-US",
+    timeZone = "UTC",
+    priceFormatter,
+    volumeFormatter,
+    timeFormatter,
+}: ChartProviderProps) {
     const [width, setWidth] = useState(0);
     const [height, setHeight] = useState(0);
 
@@ -167,6 +186,12 @@ export default function ChartProvider({ children }: ChartProviderProps) {
                 intervalEndX,
 
                 mouseOnChart,
+
+                locale,
+                timeZone,
+                priceFormatter,
+                volumeFormatter,
+                timeFormatter,
 
                 // actions
                 setSize,

@@ -1,3 +1,104 @@
+export const CANDLE_INTERVALS = [
+    "1m",
+    "3m",
+    "5m",
+    "15m",
+    "30m",
+    "1h",
+    "2h",
+    "4h",
+    "12h",
+    "1d",
+    "3d",
+    "1w",
+    "1M",
+] as const;
+
+export type CandleInterval = (typeof CANDLE_INTERVALS)[number];
+
+export interface CandlePoint {
+    start: number;
+    end: number;
+    open: number;
+    high: number;
+    low: number;
+    close: number;
+    volume?: number;
+    trades?: number;
+}
+
+export interface CandleSeries {
+    interval: CandleInterval;
+    data: readonly CandlePoint[];
+}
+
+export interface LinePoint {
+    x: number;
+    y: number;
+}
+
+export type DataMode = "replace" | "upsert";
+export type InvalidDataBehavior = "filter" | "throw";
+
+export type DataIssueCode =
+    | "duplicate-series"
+    | "invalid-interval"
+    | "invalid-number"
+    | "invalid-time-range"
+    | "invalid-ohlc"
+    | "invalid-volume"
+    | "duplicate-point";
+
+export interface DataIssue {
+    code: DataIssueCode;
+    message: string;
+    seriesIndex?: number;
+    pointIndex?: number;
+}
+
+export interface DataIssueReport {
+    /** At most the first 100 issues from the current input revision. */
+    issues: readonly DataIssue[];
+    total: number;
+}
+
+export class KwantDataError extends Error {
+    readonly report: DataIssueReport;
+
+    constructor(report: DataIssueReport) {
+        super(`Kwant found ${report.total} data issue(s)`);
+        this.name = "KwantDataError";
+        this.report = report;
+    }
+}
+
+export interface TimeRange {
+    from: number;
+    to: number;
+}
+
+export type ValueFormatter = (value: number) => string;
+export type TimeFormatter = (value: number) => string;
+export type TimeZoneMode = "UTC" | "local";
+
+export interface KwantTheme {
+    containerBackground: string;
+    plotBackground: string;
+    gridColor: string;
+    accentColor: string;
+    crosshairColor: string;
+    crosshairLineStyle: "solid" | "dashed" | "dotted";
+    upColor: string;
+    downColor: string;
+}
+
+// Internal candle shape retained by the candlestick renderer. Public callers
+// provide CandleSeries/CandlePoint, and KwantChart adds the series metadata.
+export interface CandleData extends Required<CandlePoint> {
+    asset: string;
+    interval: CandleInterval;
+}
+
 export type TimeFrame =
     | "min1"
     | "min3"
@@ -13,20 +114,7 @@ export type TimeFrame =
     | "week"
     | "month";
 
-export interface CandleData {
-    open: number;
-    high: number;
-    low: number;
-    close: number;
-    start: number;
-    end: number;
-    volume: number;
-    trades: number;
-    asset: string;
-    interval: string;
-}
-
-export const TIMEFRAME_CAMELCASE: Record<string, TimeFrame> = {
+export const TIMEFRAME_CAMELCASE: Record<CandleInterval, TimeFrame> = {
     "1m": "min1",
     "3m": "min3",
     "5m": "min5",
@@ -42,25 +130,12 @@ export const TIMEFRAME_CAMELCASE: Record<string, TimeFrame> = {
     "1M": "month",
 };
 
-const TIMEFRAME_SHORT: Record<TimeFrame, string> = Object.entries(
-    TIMEFRAME_CAMELCASE
-).reduce(
-    (acc, [short, tf]) => {
-        acc[tf] = short;
-        return acc;
-    },
-    {} as Record<TimeFrame, string>
-);
-
-export function fromTimeFrame(tf: TimeFrame): string {
-    return TIMEFRAME_SHORT[tf];
-}
-
-export function into(tf: string): TimeFrame {
-    return TIMEFRAME_CAMELCASE[tf];
-}
-
-
+export const TIMEFRAME_INTERVAL = Object.fromEntries(
+    Object.entries(TIMEFRAME_CAMELCASE).map(([interval, timeframe]) => [
+        timeframe,
+        interval,
+    ])
+) as Record<TimeFrame, CandleInterval>;
 
 export const TF_TO_MS: Record<TimeFrame, number> = {
     min1: 60_000,

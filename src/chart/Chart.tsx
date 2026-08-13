@@ -16,9 +16,10 @@ import {
     computePricePan,
 } from "./utils";
 import { MIN_CANDLE_WIDTH, MAX_CANDLE_WIDTH } from "./constants";
-import { TF_TO_MS } from "../types";
 import type { TimeFrame } from "../types";
 import type { CandleData } from "./utils";
+import { paddedDomain } from "../core/domain";
+import { nearestIndex } from "../core/search";
 
 export interface ChartProps {
     asset: string;
@@ -250,17 +251,16 @@ function upperBound<T>(
 function aggregateCandles(c: CandleData[], groupSize: number): CandleData[] {
     if (groupSize <= 1) return c;
     const out: CandleData[] = [];
-    for (let i = 0; i < c.length; i += groupSize) {
-        const startCandle = c[i];
-        const lastIdx = Math.min(i + groupSize - 1, c.length - 1);
-        const endCandle = c[lastIdx];
-
+    let group: CandleData[] = [];
+    const flush = () => {
+        if (!group.length) return;
+        const startCandle = group[0];
+        const endCandle = group[group.length - 1];
         let high = -Infinity;
         let low = Infinity;
         let volume = 0;
         let trades = 0;
-        for (let j = i; j <= lastIdx; j++) {
-            const item = c[j];
+        for (const item of group) {
             if (item.high > high) high = item.high;
             if (item.low < low) low = item.low;
             volume += item.volume;
@@ -279,7 +279,18 @@ function aggregateCandles(c: CandleData[], groupSize: number): CandleData[] {
             asset: startCandle.asset,
             interval: startCandle.interval,
         });
+        group = [];
+    };
+
+    for (const candle of c) {
+        const previous = group[group.length - 1];
+        const duration = previous ? previous.end - previous.start : 0;
+        const separated =
+            previous && candle.start - previous.end > Math.max(1, duration * 0.5);
+        if (group.length >= groupSize || separated) flush();
+        group.push(candle);
     }
+    flush();
     return out;
 }
 
@@ -310,6 +321,7 @@ const Chart: React.FC<ChartProps> = ({
         startTime,
         endTime,
         selectingInterval,
+        crosshairX,
     } = useChartContext();
 
     const [isInside, setIsInside] = useState(false);
@@ -395,11 +407,16 @@ const Chart: React.FC<ChartProps> = ({
         width > 0 ? visibleCandles.length / Math.max(1, width) : 0;
     const lodK = barsPerPx > 8 ? 16 : barsPerPx > 4 ? 8 : barsPerPx > 2 ? 4 : 1;
 
+    const aggregatedCandles = useMemo(
+        () => (lodK === 1 ? candles : aggregateCandles(candles, lodK)),
+        [candles, lodK]
+    );
     const drawCandles = useMemo(() => {
-        return lodK === 1
-            ? visibleCandles
-            : aggregateCandles(visibleCandles, lodK);
-    }, [lodK, visibleCandles]);
+        if (!aggregatedCandles.length || endTime <= startTime) return [];
+        const first = lowerBound(aggregatedCandles, startTime, (c) => c.end);
+        const last = upperBound(aggregatedCandles, endTime, (c) => c.start);
+        return aggregatedCandles.slice(first, last);
+    }, [aggregatedCandles, endTime, startTime]);
 
     const minSpacingPx = useMemo(() => {
         if (drawCandles.length < 2 || width <= 0 || endTime <= startTime) {
@@ -520,8 +537,9 @@ const Chart: React.FC<ChartProps> = ({
             if (c.high > high) high = c.high;
         }
 
-        if (Number.isFinite(low) && Number.isFinite(high) && low < high) {
-            setPriceRange(low * 0.98, high * 1.02);
+        if (Number.isFinite(low) && Number.isFinite(high)) {
+            const domain = paddedDomain(low, high, { paddingRatio: 0.04 });
+            setPriceRange(domain.min, domain.max);
         }
     }, [visibleCandles, manualPriceRange, setPriceRange]);
 
@@ -674,32 +692,6 @@ const Chart: React.FC<ChartProps> = ({
     // ------------------------------------------------------------
     // Crosshair
     // ------------------------------------------------------------
-    const snapToMonthCenter = (timeMs: number) => {
-        const d = new Date(timeMs);
-        const year = d.getUTCFullYear();
-        const month = d.getUTCMonth();
-        const center = (y: number, m: number) => {
-            const start = Date.UTC(y, m, 1);
-            const next = Date.UTC(y, m + 1, 1);
-            return start + (next - start) / 2;
-        };
-        const candidates = [
-            center(year, month - 1),
-            center(year, month),
-            center(year, month + 1),
-        ];
-        let best = candidates[0];
-        let bestDiff = Math.abs(best - timeMs);
-        for (let i = 1; i < candidates.length; i++) {
-            const diff = Math.abs(candidates[i] - timeMs);
-            if (diff < bestDiff) {
-                bestDiff = diff;
-                best = candidates[i];
-            }
-        }
-        return best;
-    };
-
     const handleMove = (e: React.MouseEvent<Element>) => {
         const rect = e.currentTarget.getBoundingClientRect();
         const effectiveWidth = width || rect.width || 0;
@@ -726,20 +718,14 @@ const Chart: React.FC<ChartProps> = ({
         const rawTime =
             startTime +
             (x / Math.max(1, effectiveWidth)) * (endTime - startTime);
-        const stepMs = TF_TO_MS[tf] ?? 0;
-
-        if (stepMs > 0) {
-            const snappedTime =
-                tf === "month"
-                    ? snapToMonthCenter(rawTime)
-                    : (() => {
-                          const anchor =
-                              candles.length > 0 ? candles[0].start : startTime;
-                          const centerOffset = stepMs / 2;
-                          const origin = anchor + centerOffset;
-                          const idx = Math.round((rawTime - origin) / stepMs);
-                          return origin + idx * stepMs;
-                      })();
+        if (candles.length > 0) {
+            const index = nearestIndex(
+                candles,
+                rawTime,
+                (candle) => (candle.start + candle.end) / 2
+            );
+            const candle = candles[index];
+            const snappedTime = (candle.start + candle.end) / 2;
             const snappedX = timeToX(
                 snappedTime,
                 startTime,
@@ -938,12 +924,60 @@ const Chart: React.FC<ChartProps> = ({
             ref={containerRef}
             className="kwant-chart-interactive relative flex-1 cursor-crosshair"
             style={{ touchAction: "none", overscrollBehavior: "contain" }}
+            role="application"
+            aria-label={`${asset} candlestick chart`}
+            tabIndex={0}
             onWheel={onWheel}
             onMouseDown={onMouseDown}
             onTouchStart={onTouchStart}
             onTouchMove={onTouchMove}
             onTouchEnd={onTouchEnd}
             onTouchCancel={onTouchEnd}
+            onKeyDown={(event) => {
+                if (event.key === "Escape") {
+                    setCrosshair(null, null);
+                    setMouseOnChart(false);
+                    setIsInside(false);
+                    return;
+                }
+                if (
+                    (event.key === "ArrowLeft" ||
+                        event.key === "ArrowRight") &&
+                    candles.length > 0 &&
+                    width > 0
+                ) {
+                    event.preventDefault();
+                    const currentTime =
+                        crosshairX === null
+                            ? endTime
+                            : startTime +
+                              (crosshairX / width) * (endTime - startTime);
+                    const current = nearestIndex(
+                        candles,
+                        currentTime,
+                        (candle) => (candle.start + candle.end) / 2
+                    );
+                    const next = Math.max(
+                        0,
+                        Math.min(
+                            candles.length - 1,
+                            current + (event.key === "ArrowLeft" ? -1 : 1)
+                        )
+                    );
+                    const candle = candles[next];
+                    setCrosshair(
+                        timeToX(
+                            (candle.start + candle.end) / 2,
+                            startTime,
+                            endTime,
+                            width
+                        ),
+                        height / 2
+                    );
+                    setMouseOnChart(true);
+                    setIsInside(true);
+                }
+            }}
         >
             <CandleCanvas
                 width={width}

@@ -1,5 +1,4 @@
-import React, { useEffect, useState } from "react";
-import { HexAlphaColorPicker, HexColorPicker } from "react-colorful";
+import React, { useEffect, useId, useRef, useState } from "react";
 
 export type CandleColor = {
     up: string;
@@ -189,11 +188,19 @@ const ColorEditor = ({
                 </button>
             </div>
 
-            {allowAlpha ? (
-                <HexAlphaColorPicker color={pickerColor} onChange={onChange} />
-            ) : (
-                <HexColorPicker color={pickerColor} onChange={onChange} />
-            )}
+            <input
+                type="color"
+                className="kwant-native-color-picker"
+                aria-label={`${label} color`}
+                value={pickerColor.slice(0, 7)}
+                onChange={(event) =>
+                    onChange(
+                        `${event.target.value}${
+                            allowAlpha ? pickerColor.slice(7, 9) : ""
+                        }`
+                    )
+                }
+            />
 
             <div className="kwant-settings-rgb-grid">
                 {(
@@ -371,6 +378,41 @@ const ChartSettings: React.FC<ChartSettingsProps> = ({
         useState<SettingsSection>("candles");
     const [draftColor, setDraftColor] = useState("");
     const [saved, setSaved] = useState(false);
+    const titleId = useId();
+    const dialogRef = useRef<HTMLDivElement>(null);
+
+    useEffect(() => {
+        const previousFocus = document.activeElement as HTMLElement | null;
+        const dialog = dialogRef.current;
+        const focusable = dialog?.querySelectorAll<HTMLElement>(
+            'button:not([disabled]), select:not([disabled]), input:not([disabled]), [tabindex]:not([tabindex="-1"])'
+        );
+        focusable?.[0]?.focus();
+
+        const trapFocus = (event: KeyboardEvent) => {
+            if (event.key !== "Tab" || !dialog) return;
+            const items = Array.from(
+                dialog.querySelectorAll<HTMLElement>(
+                    'button:not([disabled]), select:not([disabled]), input:not([disabled]), [tabindex]:not([tabindex="-1"])'
+                )
+            );
+            if (!items.length) return;
+            const first = items[0];
+            const last = items[items.length - 1];
+            if (event.shiftKey && document.activeElement === first) {
+                event.preventDefault();
+                last.focus();
+            } else if (!event.shiftKey && document.activeElement === last) {
+                event.preventDefault();
+                first.focus();
+            }
+        };
+        dialog?.addEventListener("keydown", trapFocus);
+        return () => {
+            dialog?.removeEventListener("keydown", trapFocus);
+            previousFocus?.focus();
+        };
+    }, []);
 
     useEffect(() => {
         setSaved(false);
@@ -518,14 +560,15 @@ const ChartSettings: React.FC<ChartSettingsProps> = ({
             data-editor-open={activeControl ? "true" : "false"}
         >
             <div
+                ref={dialogRef}
                 role="dialog"
                 aria-modal="true"
-                aria-labelledby="kwant-settings-title"
+                aria-labelledby={titleId}
                 className="kwant-settings-panel"
             >
                 <div className="kwant-settings-header">
                     <h2
-                        id="kwant-settings-title"
+                        id={titleId}
                         className="text-lg font-semibold text-white/80"
                     >
                         Settings
