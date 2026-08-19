@@ -1,6 +1,6 @@
 {
   "name": "kwant",
-  "version": "3.0.0",
+  "version": "3.0.1",
   "description": "React canvas charts for candlesticks, numeric lines, and PnL.",
   "license": "MIT",
   "type": "module",
