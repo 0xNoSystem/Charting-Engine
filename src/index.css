@@ -1343,3 +1343,7 @@
   background-color: #ef4444;
   box-shadow: 0 0 6px #ef4444, 0 0 12px rgb(239 68 68 / 0.45);
 }
+.kwant-chart .kwant-price-line[role="slider"]:focus,
+.kwant-chart .kwant-price-line-remove:focus {
+  outline: none;
+}

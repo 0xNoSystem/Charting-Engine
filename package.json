@@ -46,6 +46,7 @@
     "test:build": "tsup --config tsup.test.config.ts",
     "test": "npm run test:build && node --test tests/core.test.cjs tests/components.test.cjs",
     "test:package": "npm run build && node --test tests/package-smoke.test.mjs",
+    "test:browser": "playwright test",
     "dev": "tsup --watch",
     "clean": "rm -rf dist",
     "prepare": "npm run build"
@@ -55,6 +56,7 @@
     "react-dom": ">=18"
   },
   "devDependencies": {
+    "@playwright/test": "^1.63.0",
     "@types/react": "^18.3.0",
     "@types/react-dom": "^18.3.0",
     "tsup": "^8.0.1",

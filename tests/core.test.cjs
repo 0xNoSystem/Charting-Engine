@@ -8,7 +8,35 @@ const {
     nearestIndex,
     downsampleLine,
     splitAtThreshold,
+    constrainPrice,
+    validatePriceLines,
 } = require("../.test-dist/core-entry.cjs");
+
+test("price constraints clamp and snap to ticks within non-aligned inclusive bounds", () => {
+    assert.equal(constrainPrice(5, { min: 10 }), 10);
+    assert.equal(constrainPrice(15, { max: 10 }), 10);
+    assert.equal(constrainPrice(-3.7, {}), -3.7);
+    const options = { min: 0.12, max: 0.38, step: 0.1 };
+    assert.equal(constrainPrice(-1, options), 0.2);
+    assert.equal(constrainPrice(1, options), 0.3);
+    assert.equal(constrainPrice(0.25, options), 0.3);
+    assert.equal(constrainPrice(0.3, { min: 0.3, max: 0.3, step: 0.1 }), 0.3);
+    assert.equal(constrainPrice(-0.35, { step: 0.1 }), -0.3);
+    assert.equal(constrainPrice(0.0000000032, { step: 1e-9 }), 3e-9);
+    assert.equal(constrainPrice(1234567890.12345, { step: 0.00001 }), 1234567890.12345);
+});
+
+test("price lines reject ambiguous identities and invalid constraints", () => {
+    const line = { id: "tp", value: 10 };
+    assert.doesNotThrow(() => validatePriceLines([line, { id: "sl", value: 0, draggable: {} }]));
+    for (const lines of [
+        [line, line], [{ ...line, id: "" }], [{ ...line, value: NaN }],
+        [{ ...line, draggable: true }], [{ ...line, draggable: { min: 2, max: 1 } }],
+        [{ ...line, draggable: { min: Infinity } }], [{ ...line, draggable: { step: 0 } }],
+        [{ ...line, draggable: { step: -1 } }], [{ ...line, draggable: { step: NaN } }],
+        [{ ...line, draggable: { min: 0.11, max: 0.19, step: 0.1 } }],
+    ]) assert.throws(() => validatePriceLines(lines), TypeError);
+});
 
 test("paddedDomain contains negative extrema", () => {
     const domain = paddedDomain(-100, -50);

@@ -8,6 +8,9 @@ import {
     computePricePan,
 } from "../utils";
 
+import PriceLines from "./PriceLines";
+import { usePriceLineInteraction } from "../PriceLinesContext";
+
 const MAX_DECIMALS = 16;
 const MIN_RELATIVE_PRICE_RANGE = 1e-8;
 const COMPACT_PRICE_SUFFIXES = [
@@ -82,22 +85,8 @@ const niceStep = (rawStep: number) => {
     return 10 * base;
 };
 
-const getContrastTextColor = (color: string) => {
-    const match = color.trim().match(/^#([\da-f]{6})$/i);
-    if (!match) return "#ffffff";
-    const value = match[1];
-    const red = Number.parseInt(value.slice(0, 2), 16);
-    const green = Number.parseInt(value.slice(2, 4), 16);
-    const blue = Number.parseInt(value.slice(4, 6), 16);
-    const luminance = (red * 299 + green * 587 + blue * 114) / 1000;
-    return luminance > 160 ? "#111111" : "#ffffff";
-};
-
-interface PriceScaleProps {
-    livePrice: boolean;
-}
-
-const PriceScale: React.FC<PriceScaleProps> = ({ livePrice }) => {
+const PriceScale: React.FC = () => {
+    const { isDragging, dragging: draggingLine } = usePriceLineInteraction();
     const {
         height,
         minPrice,
@@ -109,7 +98,6 @@ const PriceScale: React.FC<PriceScaleProps> = ({ livePrice }) => {
         crosshairY,
         mouseOnChart,
         selectingInterval,
-        candleColor,
         priceFormatter,
     } = useChartContext();
 
@@ -253,22 +241,8 @@ const PriceScale: React.FC<PriceScaleProps> = ({ livePrice }) => {
             ? yToPrice(crosshairY, minPrice, maxPrice, height)
             : null;
     const crosshairYValue = crosshairY ?? 0;
-    const latestCandle = candles[candles.length - 1];
-    const latestPrice =
-        latestCandle && Number.isFinite(latestCandle.close)
-            ? latestCandle.close
-            : null;
-    const latestPriceY =
-        latestPrice !== null && height > 0 && maxPrice > minPrice
-            ? priceToY(latestPrice, minPrice, maxPrice, height)
-            : null;
-    const latestPriceColor =
-        latestCandle && latestCandle.close >= latestCandle.open
-            ? candleColor.up
-            : candleColor.down;
-    const latestPriceTextColor = getContrastTextColor(latestPriceColor);
-
     const onTouchStart = (e: React.TouchEvent) => {
+        if (isDragging()) return;
         if (e.touches.length === 1) {
             touchState.current = {
                 mode: "zoom",
@@ -292,6 +266,7 @@ const PriceScale: React.FC<PriceScaleProps> = ({ livePrice }) => {
     };
 
     const onTouchMove = (e: React.TouchEvent) => {
+        if (isDragging()) return;
         if (!touchState.current) return;
 
         const state = touchState.current;
@@ -334,6 +309,7 @@ const PriceScale: React.FC<PriceScaleProps> = ({ livePrice }) => {
     };
 
     const onTouchEnd = (e: React.TouchEvent) => {
+        if (isDragging()) return;
         if (e.touches.length === 1) {
             touchState.current = {
                 mode: "zoom",
@@ -350,6 +326,7 @@ const PriceScale: React.FC<PriceScaleProps> = ({ livePrice }) => {
     };
 
     const onWheel = (e: React.WheelEvent) => {
+        if (isDragging()) return;
         e.stopPropagation();
 
         if (e.shiftKey) {
@@ -397,6 +374,7 @@ const PriceScale: React.FC<PriceScaleProps> = ({ livePrice }) => {
             onTouchEnd={onTouchEnd}
             onTouchCancel={onTouchEnd}
             onMouseDown={(e) => {
+                if (isDragging()) return;
                 e.preventDefault();
 
                 dragModeRef.current =
@@ -458,39 +436,11 @@ const PriceScale: React.FC<PriceScaleProps> = ({ livePrice }) => {
                 </g>
             ))}
 
-            {livePrice &&
-                latestPrice !== null &&
-                latestPriceY !== null &&
-                latestPriceY >= 0 &&
-                latestPriceY <= height && (
-                    <>
-                        <rect
-                            x={crosshairX}
-                            y={Math.round(latestPriceY) + 0.5 - 9}
-                            width={crosshairWidth}
-                            height={18}
-                            fill={latestPriceColor}
-                            rx={4}
-                        />
-                        <text
-                            x={labelX}
-                            y={Math.round(latestPriceY) + 0.5}
-                            textAnchor="middle"
-                            alignmentBaseline="middle"
-                            fill={latestPriceTextColor}
-                            fontSize={fontSize + 1}
-                            fontWeight="bold"
-                        >
-                            {formatCrosshairPrice(latestPrice)}
-                        </text>
-                    </>
-                )}
-
             {/* --- Crosshair Price Label --- */}
             {crosshairY !== null &&
                 crosshairPrice !== null &&
                 mouseOnChart &&
-                !selectingInterval && (
+                !selectingInterval && !draggingLine && (
                     <>
                         {/* Background box (TV style) */}
                         <rect
@@ -518,8 +468,9 @@ const PriceScale: React.FC<PriceScaleProps> = ({ livePrice }) => {
                         </text>
                     </>
                 )}
+            <PriceLines axis={{ x: crosshairX, width: crosshairWidth, fontSize: fontSize + 1, format: formatCrosshairPrice }} />
         </svg>
     );
 };
 
-export default PriceScale;
+export default React.memo(PriceScale);

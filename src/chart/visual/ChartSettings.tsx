@@ -9,6 +9,7 @@ export type CrosshairLineStyle = "solid" | "dashed" | "dotted";
 
 export type ChartAppearance = {
     backgroundColor: string;
+    plotBackgroundColor: string;
     gridColor: string;
     secondaryColor: string;
     crosshairColor: string;
@@ -27,7 +28,8 @@ export const DEFAULT_CANDLE_COLORS: CandleColor = {
 
 export const DEFAULT_CHART_APPEARANCE: ChartAppearance = {
     backgroundColor: "rgba(255,255,255,0.1)",
-    gridColor: "#111212",
+    plotBackgroundColor: "#111212",
+    gridColor: "rgba(148, 163, 184, 0.24)",
     secondaryColor: "#f97316",
     crosshairColor: "#ffffff",
     crosshairLineStyle: "dashed",
@@ -46,6 +48,7 @@ type ColorField =
     | "up"
     | "down"
     | "background"
+    | "plotBackground"
     | "grid"
     | "secondary"
     | "crosshair";
@@ -461,11 +464,18 @@ const ChartSettings: React.FC<ChartSettingsProps> = ({
             allowAlpha: true,
         },
         {
+            field: "plotBackground",
+            label: "Plot background",
+            value: initialValue.appearance.plotBackgroundColor,
+            defaultValue: defaultValue.appearance.plotBackgroundColor,
+            allowAlpha: false,
+        },
+        {
             field: "grid",
-            label: "Grid",
+            label: "Grid lines",
             value: initialValue.appearance.gridColor,
             defaultValue: defaultValue.appearance.gridColor,
-            allowAlpha: false,
+            allowAlpha: true,
         },
     ];
     const activeControl = controls.find(
@@ -478,6 +488,7 @@ const ChartSettings: React.FC<ChartSettingsProps> = ({
         (control) =>
             control.field === "secondary" ||
             control.field === "background" ||
+            control.field === "plotBackground" ||
             control.field === "grid"
     );
     const crosshairControl = controls.find(
@@ -517,8 +528,11 @@ const ChartSettings: React.FC<ChartSettingsProps> = ({
                     true
                 );
                 break;
+            case "plotBackground":
+                next.appearance.plotBackgroundColor = normalizeHex(draftColor, false);
+                break;
             case "grid":
-                next.appearance.gridColor = normalizeHex(draftColor, false);
+                next.appearance.gridColor = normalizeHex(draftColor, true);
                 break;
             case "secondary":
                 next.appearance.secondaryColor = normalizeHex(

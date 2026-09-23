@@ -1,6 +1,9 @@
 node_modules
 dist
 .test-dist
+.test-browser
+test-results
+playwright-report
 bun.lockb
 *.log
 npm-debug.log*

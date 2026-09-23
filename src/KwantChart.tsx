@@ -31,6 +31,8 @@ import {
 import { nearestIndex } from "./core/search";
 import { xToTime } from "./chart/utils";
 
+import type { PriceLineProps } from "./priceLines";
+
 type RangePreset = "24H" | "7D" | "30D" | "YTD" | "CUSTOM";
 
 const RANGE_PRESETS: { id: RangePreset; label: string }[] = [
@@ -122,6 +124,7 @@ function isChartSettingsValue(value: unknown): value is ChartSettingsValue {
             typeof candidate.candles.down === "string" &&
             candidate.appearance &&
             typeof candidate.appearance.backgroundColor === "string" &&
+            typeof candidate.appearance.plotBackgroundColor === "string" &&
             typeof candidate.appearance.gridColor === "string" &&
             typeof candidate.appearance.secondaryColor === "string" &&
             typeof candidate.appearance.crosshairColor === "string" &&
@@ -147,7 +150,7 @@ const toDateTimeLocal = (ms: number) => {
     return new Date(date.getTime() - offset).toISOString().slice(0, 16);
 };
 
-export interface KwantChartProps {
+export interface KwantChartProps extends PriceLineProps {
     /** Caller-owned candle series grouped by interval. */
     series: readonly CandleSeries[];
     /** Optional source label. */
@@ -195,6 +198,7 @@ function KwantChartContent({
     height,
     theme,
     livePrice = false,
+    priceLines,
     showSettings = true,
     interval,
     defaultInterval,
@@ -251,8 +255,10 @@ function KwantChartContent({
             backgroundColor:
                 theme?.containerBackground ??
                 DEFAULT_CHART_APPEARANCE.backgroundColor,
+            plotBackgroundColor:
+                theme?.plotBackground ?? DEFAULT_CHART_APPEARANCE.plotBackgroundColor,
             gridColor:
-                theme?.plotBackground ?? DEFAULT_CHART_APPEARANCE.gridColor,
+                theme?.gridColor ?? DEFAULT_CHART_APPEARANCE.gridColor,
             secondaryColor:
                 theme?.accentColor ?? DEFAULT_CHART_APPEARANCE.secondaryColor,
             crosshairColor:
@@ -268,6 +274,7 @@ function KwantChartContent({
             theme?.crosshairColor,
             theme?.crosshairLineStyle,
             theme?.plotBackground,
+            theme?.gridColor,
         ]
     );
     const [appearance, setAppearance] = useState<ChartAppearance>(
@@ -321,8 +328,23 @@ function KwantChartContent({
                 return;
             }
             const parsed: unknown = JSON.parse(stored);
-            if (isChartSettingsValue(parsed)) {
-                applySettings(parsed);
+            const saved = parsed as { appearance?: Partial<ChartAppearance> } | null;
+            // Older settings used gridColor for the plot background. Preserve it
+            // and initialize the newly configurable grid lines from the theme.
+            const restored = saved?.appearance &&
+                typeof saved.appearance === "object" &&
+                !("plotBackgroundColor" in saved.appearance)
+                ? {
+                    ...saved,
+                    appearance: {
+                        ...saved.appearance,
+                        plotBackgroundColor: saved.appearance.gridColor,
+                        gridColor: developerSettings.appearance.gridColor,
+                    },
+                }
+                : parsed;
+            if (isChartSettingsValue(restored)) {
+                applySettings(restored);
             } else {
                 window.localStorage.removeItem(settingsStorageKey);
                 applySettings(developerSettings);
@@ -545,9 +567,8 @@ function KwantChartContent({
         maxHeight: "100%",
         minHeight: height === undefined ? "70vh" : undefined,
         ["--kwant-chart-container-bg" as string]: appearance.backgroundColor,
-        ["--kwant-grid-color" as string]: appearance.gridColor,
-        ["--kwant-axis-grid-color" as string]:
-            theme?.gridColor ?? "rgba(148, 163, 184, 0.24)",
+        ["--kwant-grid-color" as string]: appearance.plotBackgroundColor,
+        ["--kwant-axis-grid-color" as string]: appearance.gridColor,
         ["--kwant-secondary" as string]: appearance.secondaryColor,
         ["--kwant-secondary-text" as string]: appearance.secondaryColor,
         ["--kwant-secondary-contrast" as string]:
@@ -688,6 +709,8 @@ function KwantChartContent({
                             settingInterval={false}
                             candleData={candleData}
                             livePrice={livePrice}
+                            priceLines={priceLines}
+                            dataKey={dataKey}
                             configurable={showSettings}
                             settingsValue={{
                                 candles: candleColor,

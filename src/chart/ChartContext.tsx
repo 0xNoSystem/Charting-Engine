@@ -160,54 +160,62 @@ export default function ChartProvider({
         []
     );
 
+    const value = useMemo(() => ({
+        // state
+        width,
+        height,
+
+        candles,
+        candleColor,
+        timeframe,
+
+        minPrice,
+        maxPrice,
+        manualPriceRange,
+
+        startTime,
+        endTime,
+
+        crosshairX,
+        crosshairY,
+
+        selectingInterval,
+        intervalStartX,
+        intervalEndX,
+
+        mouseOnChart,
+
+        locale,
+        timeZone,
+        priceFormatter,
+        volumeFormatter,
+        timeFormatter,
+
+        // actions
+        setSize,
+        setTf,
+        setCandles,
+        setCandleColor,
+        setPriceRange,
+        setManualPriceRange,
+        setTimeRange,
+        setCrosshair,
+        setSelectingInterval,
+        setIntervalStartX,
+        setIntervalEndX,
+        setMouseOnChart,
+
+    }), [
+        width, height, candles, candleColor, timeframe, minPrice, maxPrice,
+        manualPriceRange, startTime, endTime, crosshairX, crosshairY,
+        selectingInterval, intervalStartX, intervalEndX, mouseOnChart,
+        locale, timeZone, priceFormatter, volumeFormatter, timeFormatter,
+        setSize, setTf, setCandleColor, setPriceRange, setManualPriceRange,
+        setTimeRange, setCrosshair,
+    ]);
+
     return (
-        <ChartContext.Provider
-            value={{
-                // state
-                width,
-                height,
-
-                candles,
-                candleColor,
-                timeframe,
-
-                minPrice,
-                maxPrice,
-                manualPriceRange,
-
-                startTime,
-                endTime,
-
-                crosshairX,
-                crosshairY,
-
-                selectingInterval,
-                intervalStartX,
-                intervalEndX,
-
-                mouseOnChart,
-
-                locale,
-                timeZone,
-                priceFormatter,
-                volumeFormatter,
-                timeFormatter,
-
-                // actions
-                setSize,
-                setTf,
-                setCandles,
-                setCandleColor,
-                setPriceRange,
-                setManualPriceRange,
-                setTimeRange,
-                setCrosshair,
-                setSelectingInterval,
-                setIntervalStartX,
-                setIntervalEndX,
-                setMouseOnChart,
-            }}
-        >
+        <ChartContext.Provider value={value}>
             {children}
         </ChartContext.Provider>
     );

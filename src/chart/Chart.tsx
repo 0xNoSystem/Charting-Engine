@@ -5,6 +5,8 @@ import React, {
     useMemo,
     useCallback,
 } from "react";
+import PriceLines from "./visual/PriceLines";
+import { usePriceLineInteraction } from "./PriceLinesContext";
 import CrossHair from "./visual/CrossHair";
 import { useChartContext } from "./ChartContextStore";
 
@@ -25,7 +27,6 @@ export interface ChartProps {
     asset: string;
     tf: TimeFrame;
     settingInterval: boolean;
-    livePrice: boolean;
 }
 
 type CandleCanvasProps = {
@@ -298,7 +299,6 @@ const Chart: React.FC<ChartProps> = ({
     asset,
     tf,
     settingInterval,
-    livePrice,
 }) => {
     const {
         candles,
@@ -326,18 +326,7 @@ const Chart: React.FC<ChartProps> = ({
 
     const [isInside, setIsInside] = useState(false);
     const wheelBusy = useRef(false);
-    const latestCandle = candles[candles.length - 1];
-    const latestPriceY =
-        latestCandle &&
-        Number.isFinite(latestCandle.close) &&
-        height > 0 &&
-        maxPrice > minPrice
-            ? priceToY(latestCandle.close, minPrice, maxPrice, height)
-            : null;
-    const latestPriceColor =
-        latestCandle && latestCandle.close >= latestCandle.open
-            ? candleColor.up
-            : candleColor.down;
+    const { dragging: draggingLine, isDragging } = usePriceLineInteraction();
 
     const containerRef = useRef<HTMLDivElement>(null);
     const touchState = useRef<{
@@ -527,7 +516,7 @@ const Chart: React.FC<ChartProps> = ({
     // Auto price range
     // ------------------------------------------------------------
     useEffect(() => {
-        if (visibleCandles.length === 0 || manualPriceRange) return;
+        if (visibleCandles.length === 0 || manualPriceRange || draggingLine || isDragging()) return;
 
         let low = Infinity;
         let high = -Infinity;
@@ -541,7 +530,7 @@ const Chart: React.FC<ChartProps> = ({
             const domain = paddedDomain(low, high, { paddingRatio: 0.04 });
             setPriceRange(domain.min, domain.max);
         }
-    }, [visibleCandles, manualPriceRange, setPriceRange]);
+    }, [visibleCandles, manualPriceRange, setPriceRange, draggingLine, isDragging]);
 
     // ------------------------------------------------------------
     // Resize observer
@@ -592,6 +581,7 @@ const Chart: React.FC<ChartProps> = ({
     // Wheel zoom / horizontal pan
     // ------------------------------------------------------------
     const onWheel = (e: React.WheelEvent) => {
+        if (isDragging()) return;
         e.stopPropagation();
         if (wheelBusy.current) return;
         wheelBusy.current = true;
@@ -632,6 +622,7 @@ const Chart: React.FC<ChartProps> = ({
     // Drag pan
     // ------------------------------------------------------------
     const onMouseDown = (e: React.MouseEvent) => {
+        if (isDragging()) return;
         e.preventDefault();
         e.stopPropagation();
 
@@ -693,6 +684,7 @@ const Chart: React.FC<ChartProps> = ({
     // Crosshair
     // ------------------------------------------------------------
     const handleMove = (e: React.MouseEvent<Element>) => {
+        if (isDragging()) return;
         const rect = e.currentTarget.getBoundingClientRect();
         const effectiveWidth = width || rect.width || 0;
         const effectiveHeight = height || rect.height || 0;
@@ -815,6 +807,7 @@ const Chart: React.FC<ChartProps> = ({
     };
 
     const onTouchStart = (e: React.TouchEvent) => {
+        if (isDragging()) return;
         e.stopPropagation();
         if (e.touches.length === 1) {
             startTouchPan(e.touches[0]);
@@ -824,6 +817,7 @@ const Chart: React.FC<ChartProps> = ({
     };
 
     const onTouchMove = (e: React.TouchEvent) => {
+        if (isDragging()) return;
         e.stopPropagation();
         if (!touchState.current) {
             if (e.touches.length === 1) startTouchPan(e.touches[0]);
@@ -907,6 +901,7 @@ const Chart: React.FC<ChartProps> = ({
     };
 
     const onTouchEnd = (e: React.TouchEvent) => {
+        if (isDragging()) return;
         e.stopPropagation();
         if (e.touches.length === 1) {
             startTouchPan(e.touches[0]);
@@ -1000,26 +995,11 @@ const Chart: React.FC<ChartProps> = ({
                 height={height}
                 className="pointer-events-none absolute inset-0"
             >
-                {livePrice &&
-                    latestPriceY !== null &&
-                    latestPriceY >= 0 &&
-                    latestPriceY <= height && (
-                        <line
-                            x1={0}
-                            y1={Math.round(latestPriceY) + 0.5}
-                            x2={width}
-                            y2={Math.round(latestPriceY) + 0.5}
-                            stroke={latestPriceColor}
-                            strokeWidth={1}
-                            strokeDasharray="1 4"
-                            strokeLinecap="round"
-                            opacity={0.82}
-                        />
-                    )}
-                {isInside && !settingInterval && <CrossHair />}
+                {isInside && !settingInterval && !draggingLine && <CrossHair />}
+                <PriceLines />
             </svg>
         </div>
     );
 };
 
-export default Chart;
+export default React.memo(Chart);

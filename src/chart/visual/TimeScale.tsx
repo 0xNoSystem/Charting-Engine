@@ -749,4 +749,4 @@ const TimeScale: React.FC = () => {
     );
 };
 
-export default TimeScale;
+export default React.memo(TimeScale);

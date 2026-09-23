@@ -29,3 +29,5 @@ export type {
     TimeZoneMode,
     ValueFormatter,
 } from "./types";
+
+export type { PriceLine, PriceLineDragOptions, LineSettings } from "./priceLines";

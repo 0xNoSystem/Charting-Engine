@@ -2,3 +2,4 @@ export { normalizeCandleSeries, normalizeLineData, upsertSorted } from "../src/c
 export { paddedDomain } from "../src/core/domain";
 export { nearestIndex } from "../src/core/search";
 export { downsampleLine, splitAtThreshold } from "../src/line/lineUtils";
+export { constrainPrice, validatePriceLines } from "../src/priceLines";

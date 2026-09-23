@@ -40,3 +40,13 @@ test("v3 candlestick chart renders grouped series on the server", () => {
     assert.match(html, /kwant-chart-frame/);
     assert.match(html, /ACME/);
 });
+
+test("price lines are SSR-safe and validate configuration before the chart is measured", () => {
+    const props = { series: [], priceLines: [{ id: "entry", value: 100 }, {
+        id: "sl", value: 90, draggable: { max: 99, step: 0.1, onChange() {} },
+    }] };
+    assert.doesNotThrow(() => renderToString(React.createElement(KwantChart, props)));
+    assert.throws(() => renderToString(React.createElement(KwantChart, {
+        ...props, priceLines: [{ id: "sl", value: 90, draggable: { step: 0 } }],
+    })), /step must be finite and positive/);
+});

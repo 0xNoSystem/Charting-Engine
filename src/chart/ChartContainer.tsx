@@ -13,9 +13,13 @@ import { nearestIndex } from "../core/search";
 import type { TimeFrame } from "../types";
 import type { CandleData } from "./utils";
 
+import { PriceLinesProvider } from "./PriceLinesContext";
+import type { PriceLineProps } from "../priceLines";
+
 type SettingsHeightMode = "normal" | "compact" | "focused";
 
-interface ChartContainerProps {
+interface ChartContainerProps extends PriceLineProps {
+    dataKey?: string | number;
     asset: string;
     tf: TimeFrame;
     settingInterval: boolean;
@@ -35,6 +39,8 @@ const ChartContainer: React.FC<ChartContainerProps> = ({
     settingInterval,
     candleData,
     livePrice,
+    priceLines,
+    dataKey,
     configurable,
     settingsValue,
     defaultSettingsValue,
@@ -143,6 +149,8 @@ const ChartContainer: React.FC<ChartContainerProps> = ({
     }, [configurable]);
 
     return (
+        <PriceLinesProvider priceLines={priceLines} livePrice={livePrice}
+            scope={JSON.stringify([asset, tf, dataKey])} removalScope={JSON.stringify([asset, dataKey])}>
         <div className="kwant-chart-container relative flex h-full flex-1 flex-col overflow-hidden">
             {/* MAIN ROW */}
             <div className="kwant-chart-main-row flex w-full flex-1">
@@ -156,7 +164,6 @@ const ChartContainer: React.FC<ChartContainerProps> = ({
                             asset={asset}
                             tf={tf}
                             settingInterval={settingInterval}
-                            livePrice={livePrice}
                         />
                         {hoveredCandle && mouseOnChart && (
                             <CandleInfo candle={hoveredCandle} />
@@ -190,7 +197,7 @@ const ChartContainer: React.FC<ChartContainerProps> = ({
                     ref={rightRef}
                     className="relative z-0 w-fit cursor-n-resize bg-black/20 text-white"
                 >
-                    <PriceScale livePrice={livePrice} />
+                    <PriceScale />
                 </div>
             </div>
 
@@ -233,6 +240,7 @@ const ChartContainer: React.FC<ChartContainerProps> = ({
             </div>
 
         </div>
+        </PriceLinesProvider>
     );
 };
 
